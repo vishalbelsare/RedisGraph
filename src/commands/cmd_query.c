@@ -245,7 +245,7 @@ void Graph_Query(void *args) {
 	QueryCtx_BeginTimer(); // start query timing
 
 	// parse query parameters and build an execution plan or retrieve it from the cache
-	ExecutionCtx *exec_ctx = ExecutionCtx_FromQuery(command_ctx->query);
+	ExecutionCtx *exec_ctx = ExecutionCtx_FromQuery(command_ctx->query, command_ctx->query_params);
 	if(exec_ctx == NULL) goto cleanup;
 
 	bool readonly = AST_ReadOnly(exec_ctx->ast->root);

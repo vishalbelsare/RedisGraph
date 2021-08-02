@@ -33,7 +33,7 @@ void Graph_Profile(void *args) {
 	AST *ast               = NULL;
 	bool cached            = false;
 	ExecutionPlan *plan    = NULL;
-	ExecutionCtx *exec_ctx = ExecutionCtx_FromQuery(command_ctx->query);
+	ExecutionCtx *exec_ctx = ExecutionCtx_FromQuery(command_ctx->query, command_ctx->query_params);
 	if(exec_ctx == NULL) goto cleanup;
 
 	ast = exec_ctx->ast;
