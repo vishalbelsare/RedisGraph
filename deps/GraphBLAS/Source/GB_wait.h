@@ -2,7 +2,7 @@
 // GB_wait.h: definitions for GB_wait
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -10,7 +10,12 @@
 #ifndef GB_WAIT_H
 #define GB_WAIT_H
 
-GB_PUBLIC
+GrB_Info GB_block   // apply all pending computations if blocking mode enabled
+(
+    GrB_Matrix A,
+    GB_Context Context
+) ;
+
 GrB_Info GB_wait                // finish all pending computations
 (
     GrB_Matrix A,               // matrix with pending computations
@@ -48,6 +53,9 @@ GrB_Info GB_unjumble        // unjumble a matrix
 // true if a matrix has pending tuples, zombies, or is jumbled
 #define GB_ANY_PENDING_WORK(A) \
     (GB_PENDING (A) || GB_ZOMBIES (A) || GB_JUMBLED (A))
+
+// true if a matrix is hypersparse but has no A->Y component
+#define GB_NEED_HYPER_HASH(A) (GB_IS_HYPERSPARSE (A) && (((A)->Y) == NULL))
 
 // wait if condition holds
 #define GB_WAIT_IF(condition,A,name)                                    \

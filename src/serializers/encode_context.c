@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "encode_context.h"
 #include "../RG.h"
@@ -58,12 +58,15 @@ void GraphEncodeContext_Reset(GraphEncodeContext *ctx) {
 	}
 
 	// Avoid leaks in case or reset during encodeing.
-	if(ctx->matrix_tuple_iterator != NULL) {
-		RG_MatrixTupleIter_free(&ctx->matrix_tuple_iterator);
-	}
+	RG_MatrixTupleIter_detach(&ctx->matrix_tuple_iterator);
 }
 
-void GraphEncodeContext_InitHeader(GraphEncodeContext *ctx, const char *graph_name, Graph *g) {
+void GraphEncodeContext_InitHeader
+(
+	GraphEncodeContext *ctx,
+	const char *graph_name,
+	Graph *g
+) {
 	ASSERT(g   != NULL);
 	ASSERT(ctx != NULL);
 
@@ -74,6 +77,8 @@ void GraphEncodeContext_InitHeader(GraphEncodeContext *ctx, const char *graph_na
 	header->graph_name                 =  graph_name;
 	header->node_count                 =  Graph_NodeCount(g);
 	header->edge_count                 =  Graph_EdgeCount(g);
+	header->deleted_node_count         =  Graph_DeletedNodeCount(g);
+	header->deleted_edge_count         =  Graph_DeletedEdgeCount(g);
 	header->relationship_matrix_count  =  r_count;
 	header->label_matrix_count         =  Graph_LabelTypeCount(g);
 	header->key_count                  =  GraphEncodeContext_GetKeyCount(ctx);
@@ -159,15 +164,9 @@ void GraphEncodeContext_SetCurrentRelationID(GraphEncodeContext *ctx,
 }
 
 RG_MatrixTupleIter *GraphEncodeContext_GetMatrixTupleIterator(
-	const GraphEncodeContext *ctx) {
+	GraphEncodeContext *ctx) {
 	ASSERT(ctx);
-	return ctx->matrix_tuple_iterator;
-}
-
-void GraphEncodeContext_SetMatrixTupleIterator(GraphEncodeContext *ctx,
-											   RG_MatrixTupleIter *iter) {
-	ASSERT(ctx);
-	ctx->matrix_tuple_iterator = iter;
+	return &ctx->matrix_tuple_iterator;
 }
 
 void GraphEncodeContext_SetMutipleEdgesArray(GraphEncodeContext *ctx, EdgeID *edges,

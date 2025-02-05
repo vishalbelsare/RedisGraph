@@ -1,16 +1,24 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "map.h"
 #include "array.h"
 #include "../util/arr.h"
-#include "../util/qsort.h"
-#include "../util/strcmp.h"
 #include "../util/rmalloc.h"
 #include "../util/strutil.h"
+
+#include <stdlib.h>
+
+static inline int _key_cmp
+(
+	const Pair *a,
+	const Pair *b
+) {
+	return strcmp(a->key.stringval, b->key.stringval);
+}
 
 static inline Pair Pair_New
 (
@@ -45,7 +53,7 @@ static int Map_KeyIdx
 	// search for key in map
 	for(uint i = 0; i < n; i++) {
 		Pair pair = m[i];
-		if(RG_STRCMP(pair.key.stringval, key.stringval) == 0) {
+		if(strcmp(pair.key.stringval, key.stringval) == 0) {
 			return i;
 		}
 	}
@@ -205,7 +213,6 @@ SIValue Map_Keys
 	return keys;
 }
 
-#define KEY_ISLT(a,b) (strcmp(a->key.stringval, b->key.stringval) < 0)
 int Map_Compare
 (
 	SIValue mapA,
@@ -225,8 +232,10 @@ int Map_Compare
 	}
 
 	// sort both maps
-	QSORT(Pair, A, A_key_count, KEY_ISLT);
-	QSORT(Pair, B, B_key_count, KEY_ISLT);
+	qsort(A, A_key_count, sizeof(Pair),
+			(int(*)(const void*, const void*))_key_cmp);
+	qsort(B, B_key_count, sizeof(Pair),
+			(int(*)(const void*, const void*))_key_cmp);
 
 	// element-wise key comparison
 	for(uint i = 0; i < key_count; i++) {
@@ -236,7 +245,7 @@ int Map_Compare
 		if(order != 0) return order;
 	}
 
-	// Element-wise value comparison.
+	// element-wise value comparison
 	for(uint i = 0; i < key_count; i++) {
 		// key lookup succeeded; compare values
 		order = SIValue_Compare(A[i].val, B[i].val, disjointOrNull);
@@ -252,8 +261,8 @@ int Map_Compare
 	return 0;
 }
 
-/* This method referenced by Java ArrayList.hashCode() method, which takes
- * into account the hashing of nested values.*/
+// this method referenced by Java ArrayList.hashCode() method, which takes
+// into account the hashing of nested values
 XXH64_hash_t Map_HashCode
 (
 	SIValue map
@@ -261,7 +270,8 @@ XXH64_hash_t Map_HashCode
 	// sort the map by key, so that {a:1, b:1} and {b:1, a:1}
 	// have the same hash value
 	uint key_count = Map_KeyCount(map);
-	QSORT(Pair, map.map, key_count, KEY_ISLT);
+	qsort(map.map, key_count, sizeof(Pair),
+			(int(*)(const void*, const void*))_key_cmp);
 
 	SIType t = T_MAP;
 	XXH64_hash_t hashCode = XXH64(&t, sizeof(t), 0);

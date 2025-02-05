@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
 #include "../../value.h"
@@ -22,6 +22,7 @@
 #include "../../filter_tree/filter_tree_utils.h"
 #include "../../arithmetic/algebraic_expression.h"
 #include "../../arithmetic/algebraic_expression/utils.h"
+#include "../execution_plan_build/execution_plan_util.h"
 #include "../execution_plan_build/execution_plan_modify.h"
 
 //------------------------------------------------------------------------------
@@ -141,7 +142,6 @@ static bool _applicable_predicate(const char* filtered_entity,
 		}
 
 		if(AR_EXP_IsAttribute(lhs_exp, NULL)) exp = rhs_exp;      // n.v = exp
-		else if(AR_EXP_IsAttribute(rhs_exp, NULL)) exp = lhs_exp; // exp = n.v
 		// filter is not of the form n.v = exp or exp = n.v
 		if(exp == NULL) {
 			res = false;
@@ -175,13 +175,16 @@ static bool _applicable_predicate(const char* filtered_entity,
 bool _applicableFilter
 (
 	const char* filtered_entity,
-	const Index *idx,
+	const Index idx,
 	FT_FilterNode **filter
 ) {
 	bool           res           =  true;
 	rax            *attr         =  NULL;
 	rax            *entities     =  NULL;
 	FT_FilterNode  *filter_tree  =  *filter;
+
+	// prepare it befor checking if applicable.
+	_normalize_filter(filtered_entity, filter);
 
 	// make sure the filter root is not a function, other then IN or distance
 	// make sure the "not equal, <>" operator isn't used
@@ -196,11 +199,17 @@ bool _applicableFilter
 	}
 
 	uint idx_fields_count = Index_FieldsCount(idx);
-	const char **idx_fields = Index_GetFields(idx);
+	const IndexField *idx_fields = Index_GetFields(idx);
 
 	// make sure all filtered attributes are indexed
 	attr = FilterTree_CollectAttributes(filter_tree);
 	uint filter_attribute_count = raxSize(attr);
+	
+	// No attributes to filter on
+	if(filter_attribute_count == 0) {
+		res = false;
+		goto cleanup;
+	}
 
 	// Filter refers to a greater number of attributes.
 	if(filter_attribute_count > idx_fields_count) {
@@ -209,8 +218,8 @@ bool _applicableFilter
 	}
 
 	for(uint i = 0; i < idx_fields_count; i++) {
-		const char *field = idx_fields[i];
-		if(raxFind(attr, (unsigned char *)field, strlen(field)) != raxNotFound) {
+		const IndexField *field = idx_fields + i;
+		if(raxFind(attr, (unsigned char *)field->name, strlen(field->name)) != raxNotFound) {
 			filter_attribute_count--;
 			// All filtered attributes are indexed.
 			if(filter_attribute_count == 0) break;
@@ -221,9 +230,6 @@ bool _applicableFilter
 		res = false;
 		goto cleanup;
 	}
-
-	// Filter is applicable, prepare it to use in index.
-	_normalize_filter(filtered_entity, filter);
 
 cleanup:
 	if(attr) raxFree(attr);
@@ -236,7 +242,7 @@ OpFilter **_applicableFilters
 (
 	const OpBase *op,
 	const char *filtered_entity,
-	const Index *idx
+	const Index idx
 ) {
 	OpFilter **filters = array_new(OpFilter *, 0);
 
@@ -303,13 +309,13 @@ void reduce_scan_op
 	const char  *min_label_str = NULL;        // tracks min label name
 
 	// see if scanned node has multiple labels
-	const char *node_alias = scan->n.alias;
+	const char *node_alias = scan->n->alias;
 	QGNode *qn = QueryGraph_GetNodeByAlias(qg, node_alias);
 	ASSERT(qn != NULL);
 
 	uint label_count = QGNode_LabelCount(qn);
 	for(uint i = 0; i < label_count; i++) {
-		Index *idx;
+		Index idx;
 		uint64_t nnz;
 		int label_id = QGNode_GetLabelID(qn, i);
 		const char *label = QGNode_GetLabel(qn, i);
@@ -317,15 +323,16 @@ void reduce_scan_op
 		// unknown label
 		if(label_id == GRAPH_UNKNOWN_LABEL) continue;
 
-		idx = GraphContext_GetIndexByID(gc, label_id, NULL, IDX_EXACT_MATCH, SCHEMA_NODE);
+		idx = GraphContext_GetIndexByID(gc, label_id, NULL, 0, IDX_EXACT_MATCH,
+				GETYPE_NODE);
 
 		// no index for current label
 		if(idx == NULL) continue;
 
-		// get all applicable filter for index
-		RSIndex *cur_idx = idx->idx;
+		ASSERT(Index_Enabled(idx));
+
 		// TODO switch to reusable array
-		OpFilter **cur_filters = _applicableFilters((OpBase *)scan, scan->n.alias, idx);
+		OpFilter **cur_filters = _applicableFilters((OpBase *)scan, scan->n->alias, idx);
 
 		// TODO consider heuristic which combines max
 		// number / restrictiveness of applicable filters
@@ -336,6 +343,9 @@ void reduce_scan_op
 			array_free(cur_filters);
 			continue;
 		}
+
+		// get all applicable filter for index
+		RSIndex *cur_idx = Index_RSIndex(idx);
 
 		nnz = Graph_LabeledNodeCount(g, label_id);
 		if(min_nnz > nnz) {
@@ -356,7 +366,7 @@ void reduce_scan_op
 	if(rs_idx == NULL) goto cleanup;
 
 	// did we found a better label to utilize? if so swap
-	if(scan->n.label_id != min_label_id) {
+	if(scan->n->label_id != min_label_id) {
 		// the scanned label does not match the one we will build an
 		// index scan over, update the traversal expression to
 		// remove the indexed label and insert the previously-scanned label
@@ -368,8 +378,8 @@ void reduce_scan_op
 			AlgebraicExpression *ae = op_traverse->ae;
 			AlgebraicExpression *operand;
 
-			const char *row_domain = scan->n.alias;
-			const char *column_domain = scan->n.alias;
+			const char *row_domain = scan->n->alias;
+			const char *column_domain = scan->n->alias;
 
 			bool found = AlgebraicExpression_LocateOperand(ae, &operand, NULL,
 					row_domain, column_domain, NULL, min_label_str);
@@ -377,18 +387,19 @@ void reduce_scan_op
 
 			AlgebraicExpression *replacement = AlgebraicExpression_NewOperand(NULL,
 					true, AlgebraicExpression_Src(operand),
-					AlgebraicExpression_Dest(operand), NULL, scan->n.label);
+					AlgebraicExpression_Dest(operand), NULL, scan->n->label);
 
 			_AlgebraicExpression_InplaceRepurpose(operand, replacement);
 		}
 
-		scan->n.label = min_label_str;
-		scan->n.label_id = min_label_id;
+		scan->n->label = min_label_str;
+		scan->n->label_id = min_label_id;
 	}
 
 	FT_FilterNode *root = _Concat_Filters(filters);
 	OpBase *indexOp = NewIndexScanOp(scan->op.plan, scan->g, scan->n, rs_idx,
 			root);
+	scan->n = NULL;
 
 	// replace the redundant scan op with the newly-constructed Index Scan
 	ExecutionPlan_ReplaceOp(plan, (OpBase *)scan, indexOp);
@@ -420,17 +431,18 @@ void reduce_cond_op(ExecutionPlan *plan, OpCondTraverse *cond) {
 
 	const char *label = QGEdge_Relation(e, 0);
 	GraphContext *gc = QueryCtx_GetGraphCtx();
-	Index *idx = GraphContext_GetIndex(gc, label, NULL, IDX_EXACT_MATCH, SCHEMA_EDGE);
+	Index idx = GraphContext_GetIndex(gc, label, NULL, 0, IDX_EXACT_MATCH,
+			SCHEMA_EDGE);
 	if(idx == NULL) return;
 
 	// get all applicable filter for index
-	RSIndex *rs_idx = idx->idx;
 	OpFilter **filters = _applicableFilters((OpBase *)cond, edge, idx);
 
 	// no filters, return
 	uint filters_count = array_len(filters);
 	if(filters_count == 0) goto cleanup;
 
+	RSIndex *rs_idx = Index_RSIndex(idx);
 	FT_FilterNode *root = _Concat_Filters(filters);
 	OpBase *indexOp = NewEdgeIndexScanOp(cond->op.plan, cond->graph, e, rs_idx,
 			root);
@@ -452,7 +464,7 @@ void reduce_cond_op(ExecutionPlan *plan, OpCondTraverse *cond) {
 	if(other_label_count > 0) {
 		// create func expression
 		const char *func_name = "hasLabels";
-		AR_ExpNode *op = AR_EXP_NewOpNode(func_name, 2);
+		AR_ExpNode *op = AR_EXP_NewOpNode(func_name, true, 2);
 
 		// create node expression
 		AR_ExpNode *node_exp = AR_EXP_NewVariableOperandNode(other_alias);

@@ -1,16 +1,17 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
-#include "execution_plan_construct.h"
 #include "RG.h"
-#include "execution_plan_modify.h"
-#include "../execution_plan.h"
 #include "../ops/ops.h"
 #include "../../query_ctx.h"
+#include "../execution_plan.h"
 #include "../../ast/ast_mock.h"
+#include "execution_plan_util.h"
+#include "execution_plan_modify.h"
+#include "execution_plan_construct.h"
 #include "../../util/rax_extensions.h"
 #include "../optimizations/optimizer.h"
 
@@ -97,7 +98,8 @@ static OpBase *_ReduceFilterToOp(ExecutionPlan *plan, const char **vars,
 void ExecutionPlan_ReduceFilterToApply(ExecutionPlan *plan, OpFilter *filter) {
 	// Collect all variables that are bound at this position in the op tree.
 	rax *bound_vars = raxNew();
-	ExecutionPlan_BoundVariables((OpBase *)filter, bound_vars);
+	ExecutionPlan_BoundVariables((OpBase *)filter, bound_vars,
+		((OpBase *)filter)->plan);
 	// Collect the variable names from bound_vars to populate the Argument ops we will build.
 	const char **vars = (const char **)raxValues(bound_vars);
 

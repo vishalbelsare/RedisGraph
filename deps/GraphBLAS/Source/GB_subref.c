@@ -2,7 +2,7 @@
 // GB_subref: C = A(I,J)
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -67,6 +67,9 @@
 //      detected in A.  Since pa = Cx [pc] holds the position of the entry in
 //      A, the entry is a zombie if Ai [pa] has been flipped.
 
+//      For symbolic extractionm, pending tuples can appear in the input matrix
+//      A.  These are ignored.
+
 #define GB_FREE_WORKSPACE                       \
 {                                               \
     GB_FREE_WORK (&TaskList, TaskList_size) ;   \
@@ -85,7 +88,6 @@
 
 #include "GB_subref.h"
 
-GB_PUBLIC
 GrB_Info GB_subref              // C = A(I,J): either symbolic or numeric
 (
     // output
@@ -108,7 +110,7 @@ GrB_Info GB_subref              // C = A(I,J): either symbolic or numeric
     //--------------------------------------------------------------------------
 
     GrB_Info info ;
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
     ASSERT_MATRIX_OK (A, "A for C=A(I,J) subref", GB0) ;
     ASSERT (GB_ZOMBIES_OK (A)) ;
     ASSERT (GB_JUMBLED_OK (A)) ;    // A is sorted, below, if jumbled on input
@@ -173,7 +175,9 @@ GrB_Info GB_subref              // C = A(I,J): either symbolic or numeric
     // ensure A is unjumbled
     //--------------------------------------------------------------------------
 
-    // ensure input matrix is not jumbled.  Zombies are OK.
+    // Ensure input matrix is not jumbled.  Zombies are OK.
+    // Pending tuples are OK (and ignored) for symbolic extraction.
+    // GB_subref_phase0 may build the hyper_hash.
     GB_MATRIX_WAIT_IF_JUMBLED (A) ;
 
     //--------------------------------------------------------------------------

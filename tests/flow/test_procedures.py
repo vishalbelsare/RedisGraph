@@ -1,12 +1,5 @@
-import os
-import sys
-import redis
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
+from common import *
+from index_utils import *
 
 GRAPH_ID = "procedures"
 redis_graph = None
@@ -18,6 +11,7 @@ node3 = Node(label="fruit", properties={"name": "Orange3", "value": 3})
 node4 = Node(label="fruit", properties={"name": "Orange4", "value": 4})
 node5 = Node(label="fruit", properties={"name": "Banana", "value": 5})
 
+
 # Tests built in procedures,
 # e.g. db.idx.fulltext.queryNodes
 # Test over all procedure behavior in addition to procedure specifics.
@@ -27,7 +21,7 @@ class testProcedures(FlowTestsBase):
         global redis_con
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -44,7 +38,7 @@ class testProcedures(FlowTestsBase):
         redis_graph.commit()
 
         # Create full-text index.
-        redis_graph.call_procedure("db.idx.fulltext.createNodeIndex", 'fruit', 'name')
+        create_fulltext_index(redis_graph, 'fruit', 'name', sync=True)
 
     # Compares two nodes based on their properties.
     def _compareNodes(self, a, b):
@@ -338,7 +332,7 @@ class testProcedures(FlowTestsBase):
         self.env.assertEquals(actual_resultset, expected_results)
 
         # Add an exact-match index to a different property on the same label..
-        result = redis_graph.query("CREATE INDEX ON :fruit(other_property)")
+        result = create_node_exact_match_index(redis_graph, 'fruit', 'other_property')
         self.env.assertEquals(result.indices_created, 1)
 
         # Verify that all indexes are reported.
@@ -348,7 +342,7 @@ class testProcedures(FlowTestsBase):
         self.env.assertEquals(actual_resultset, expected_results)
 
         # Add an exact-match index to the full-text indexed property on the same label..
-        result = redis_graph.query("CREATE INDEX ON :fruit(name)")
+        result = create_node_exact_match_index(redis_graph, 'fruit', 'name', sync=True)
         self.env.assertEquals(result.indices_created, 1)
 
         # Verify that all indexes are reported.
@@ -368,7 +362,10 @@ class testProcedures(FlowTestsBase):
         actual_resultset = redis_graph.query("CALL dbms.procedures() YIELD mode, name RETURN mode, name ORDER BY name").result_set
 
         expected_result = [["READ", "algo.BFS"],
+                           ['READ', 'algo.SPpaths'],
+                           ['READ', 'algo.SSpaths'],
                            ["READ", "algo.pageRank"],
+                           ['READ', 'db.constraints'],
                            ["WRITE", "db.idx.fulltext.createNodeIndex"],
                            ["WRITE", "db.idx.fulltext.drop"],
                            ["READ", "db.idx.fulltext.queryNodes"],

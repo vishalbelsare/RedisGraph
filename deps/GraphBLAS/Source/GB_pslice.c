@@ -2,7 +2,7 @@
 // GB_pslice: partition Ap for a set of tasks
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -113,7 +113,6 @@ static void GB_pslice_worker
 // GB_pslice: partition Ap for a set of tasks
 //------------------------------------------------------------------------------
 
-GB_PUBLIC
 void GB_pslice                      // slice Ap
 (
     int64_t *restrict Slice,     // size ntasks+1

@@ -1,19 +1,15 @@
 import re
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
+from common import *
+from index_utils import *
 from collections import Counter
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../../')
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../..')
 from demo import QueryInfo
 
 GRAPH_ID = "G"
 redis_con = None
 redis_graph = None
+
 
 class testPathFilter(FlowTestsBase):
     def __init__(self):
@@ -23,7 +19,7 @@ class testPathFilter(FlowTestsBase):
 
     def setUp(self):
         global redis_graph
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.env.flush()
 
     def test00_simple_path_filter(self):
@@ -168,8 +164,7 @@ class testPathFilter(FlowTestsBase):
         redis_graph.flush()
 
         # Create index.
-        query = "CREATE INDEX ON :L(x)"
-        result_set = redis_graph.query(query)
+        result_set = create_node_exact_match_index(redis_graph, 'L', 'x', sync=True)
         self.env.assertEquals(result_set.indices_created, 1)
 
         # Issue a query in which the bound variable stream of the SemiApply op is an Index Scan.

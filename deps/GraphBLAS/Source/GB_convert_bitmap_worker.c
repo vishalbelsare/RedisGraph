@@ -2,7 +2,7 @@
 // GB_convert_bitmap_worker: construct triplets or CSC/CSR from bitmap
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -17,6 +17,7 @@
 
 #include "GB.h"
 #include "GB_partition.h"
+#include "GB_unused.h"
 
 GrB_Info GB_convert_bitmap_worker   // extract CSC/CSR or triplets from bitmap
 (
@@ -140,8 +141,7 @@ GrB_Info GB_convert_bitmap_worker   // extract CSC/CSR or triplets from bitmap
 
     int nth = GB_nthreads (avdim, chunk, nthreads_max) ;
     GB_cumsum (Ap, avdim, anvec_nonempty, nth, Context) ;
-    int64_t anz = Ap [avdim] ;
-    ASSERT (anz == A->nvals) ;
+    ASSERT (Ap [avdim] == A->nvals) ;
 
     //--------------------------------------------------------------------------
     // gather the pattern and values from the bitmap

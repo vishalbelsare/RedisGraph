@@ -2,7 +2,7 @@
 // GB_ix_realloc: reallocate a sparse/hyper matrix to hold a given # of entries
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -13,7 +13,6 @@
 
 #include "GB.h"
 
-GB_PUBLIC
 GrB_Info GB_ix_realloc      // reallocate space in a matrix
 (
     GrB_Matrix A,               // matrix to allocate space for

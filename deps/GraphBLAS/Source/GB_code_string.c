@@ -2,7 +2,7 @@
 // GB_code_string: convert a type code into a string
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -11,7 +11,6 @@
 
 #include "GB.h"
 
-GB_PUBLIC
 char *GB_code_string            // return a static string for a type name
 (
     const GB_Type_code code     // code to convert to string

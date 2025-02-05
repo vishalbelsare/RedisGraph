@@ -2,7 +2,7 @@
 // GB_Monoid_new: create a GrB_Monoid
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -20,6 +20,7 @@
 
 #include "GB.h"
 #include "GB_binop.h"
+#include "GB_Monoid_new.h"
 
 GrB_Info GB_Monoid_new          // create a monoid
 (
@@ -304,6 +305,58 @@ GrB_Info GB_Monoid_new          // create a monoid
 
             // boolean EQ monoid:  identity is true, no terminal value
             if (zcode == GB_BOOL_code) GB_IN (bool, true)
+
+        case GB_BOR_binop_code      : 
+
+            // BOR monoids (bitwise or):
+            switch (zcode)
+            {
+                case GB_UINT8_code  : GB_IT (uint8_t , 0, 0xFF               )
+                case GB_UINT16_code : GB_IT (uint16_t, 0, 0xFFFF             )
+                case GB_UINT32_code : GB_IT (uint32_t, 0, 0xFFFFFFFF         ) 
+                case GB_UINT64_code : GB_IT (uint64_t, 0, 0xFFFFFFFFFFFFFFFF ) 
+                default: ;
+            }
+            break ;
+
+        case GB_BAND_binop_code     : 
+
+            // BAND monoids (bitwise and):
+            switch (zcode)
+            {
+                case GB_UINT8_code  : GB_IT (uint8_t , 0xFF              , 0 )
+                case GB_UINT16_code : GB_IT (uint16_t, 0xFFFF            , 0 )
+                case GB_UINT32_code : GB_IT (uint32_t, 0xFFFFFFFF        , 0 ) 
+                case GB_UINT64_code : GB_IT (uint64_t, 0xFFFFFFFFFFFFFFFF, 0 ) 
+                default: ;
+            }
+            break ;
+
+        case GB_BXOR_binop_code     : 
+
+            // BXOR monoids (bitwise xor): not terminal
+            switch (zcode)
+            {
+                case GB_UINT8_code  : GB_IN (uint8_t , 0 )
+                case GB_UINT16_code : GB_IN (uint16_t, 0 )
+                case GB_UINT32_code : GB_IN (uint32_t, 0 ) 
+                case GB_UINT64_code : GB_IN (uint64_t, 0 ) 
+                default: ;
+            }
+            break ;
+
+        case GB_BXNOR_binop_code    : 
+
+            // BXNOR monoids (bitwise xnor): not terminal
+            switch (zcode)
+            {
+                case GB_UINT8_code  : GB_IN (uint8_t , 0xFF               )
+                case GB_UINT16_code : GB_IN (uint16_t, 0xFFFF             )
+                case GB_UINT32_code : GB_IN (uint32_t, 0xFFFFFFFF         )
+                case GB_UINT64_code : GB_IN (uint64_t, 0xFFFFFFFFFFFFFFFF )
+                default: ;
+            }
+            break ;
 
         default : ;
 

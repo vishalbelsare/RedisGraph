@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 
 Feature: Delete4 - Delete clause interoperation with other clauses
 
-  @skip
   Scenario: [1] Undirected expand followed by delete and count
     Given an empty graph
     And having executed:
@@ -50,7 +49,6 @@ Feature: Delete4 - Delete clause interoperation with other clauses
       | -nodes         | 2 |
       | -relationships | 1 |
 
-  @skip
   Scenario: [2] Undirected variable length expand followed by delete and count
     Given an empty graph
     And having executed:

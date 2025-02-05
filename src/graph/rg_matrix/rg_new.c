@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
 #include "rg_matrix.h"
@@ -23,13 +23,11 @@ static GrB_Info _RG_Matrix_init
 	//--------------------------------------------------------------------------
 
 	//--------------------------------------------------------------------------
-	// m, never hypersparse
+	// m, can be either hypersparse or sparse
 	//--------------------------------------------------------------------------
 	info = GrB_Matrix_new(&A->matrix, type, nrows, ncols);
 	ASSERT(info == GrB_SUCCESS);
-	info = GxB_set(A->matrix, GxB_SPARSITY_CONTROL, GxB_SPARSE);
-	ASSERT(info == GrB_SUCCESS);
-	info = GxB_set(A->matrix, GxB_HYPER_SWITCH, GxB_NEVER_HYPER);
+	info = GxB_set(A->matrix, GxB_SPARSITY_CONTROL, GxB_SPARSE | GxB_HYPERSPARSE);
 	ASSERT(info == GrB_SUCCESS);
 
 	//--------------------------------------------------------------------------

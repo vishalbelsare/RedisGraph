@@ -1,7 +1,7 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #pragma once
@@ -12,14 +12,15 @@
 #include <stdbool.h>
 
 struct QGEdge {
-	const char *alias;      /* User-provided alias attached to edge. */
-	const char **reltypes;  /* Relationship type strings */
-	int *reltypeIDs;        /* Relationship type IDs */ // TODO can be uint save for GRAPH_NO_RELATION
-	QGNode *src;            /* Pointer to source node. */
-	QGNode *dest;           /* Pointer to destination node. */
-	uint minHops;           /* Minimum number of hops this edge represents. */
-	uint maxHops;           /* Maximum number of hops this edge represents. */
-	bool bidirectional;     /* Edge doesn't have a direction. */
+	const char *alias;      // user-provided alias attached to edge
+	const char **reltypes;  // relationship type strings
+	int *reltypeIDs;        // relationship type IDs // TODO: can be uint save for GRAPH_NO_RELATION
+	QGNode *src;            // pointer to source node
+	QGNode *dest;           // pointer to destination node
+	uint minHops;           // minimum number of hops this edge represents
+	uint maxHops;           // maximum number of hops this edge represents
+	bool bidirectional;     // edge doesn't have a direction
+	bool shortest_path;     // only edges in the shortest paths should be collected
 };
 
 typedef struct QGEdge QGEdge;
@@ -57,6 +58,26 @@ QGEdge *QGEdge_Clone
 
 // determine whether this is a variable length edge
 bool QGEdge_VariableLength
+(
+	const QGEdge *e
+);
+
+// determine whether this is a "ghost" edge
+// an edge of length zero
+// e.g. ()-[*0]->()
+bool QGEdge_GhostEdge
+(
+	const QGEdge *e
+);
+
+// determine whether this edge represent a single hop
+bool QGEdge_SingleHop
+(
+	const QGEdge *e
+);
+
+// determine whether this is part of an allShortestPaths query
+bool QGEdge_IsShortestPath
 (
 	const QGEdge *e
 );

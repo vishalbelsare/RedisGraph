@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "op_cartesian_product.h"
 #include "RG.h"
@@ -37,7 +37,7 @@ static int _PullFromStreams(CartesianProduct *op) {
 		Record childRecord = OpBase_Consume(child);
 
 		if(childRecord) {
-			Record_TransferEntries(&op->r, childRecord);
+			Record_TransferEntries(&op->r, childRecord, true);
 			OpBase_DeleteRecord(childRecord);
 			/* Managed to get new data
 			 * Reset streams [0-i] */
@@ -48,7 +48,7 @@ static int _PullFromStreams(CartesianProduct *op) {
 				child = op->op.children[j];
 				childRecord = OpBase_Consume(child);
 				if(childRecord) {
-					Record_TransferEntries(&op->r, childRecord);
+					Record_TransferEntries(&op->r, childRecord, true);
 					OpBase_DeleteRecord(childRecord);
 				} else {
 					return 0;
@@ -82,7 +82,7 @@ static Record CartesianProductConsume(OpBase *opBase) {
 			child = op->op.children[i];
 			childRecord = OpBase_Consume(child);
 			if(!childRecord) return NULL;
-			Record_TransferEntries(&op->r, childRecord);
+			Record_TransferEntries(&op->r, childRecord, true);
 			OpBase_DeleteRecord(childRecord);
 		}
 		return OpBase_CloneRecord(op->r);
@@ -94,7 +94,7 @@ static Record CartesianProductConsume(OpBase *opBase) {
 
 	if(childRecord) {
 		// Managed to get data from first stream.
-		Record_TransferEntries(&op->r, childRecord);
+		Record_TransferEntries(&op->r, childRecord, true);
 		OpBase_DeleteRecord(childRecord);
 	} else {
 		// Failed to get data from first stream,

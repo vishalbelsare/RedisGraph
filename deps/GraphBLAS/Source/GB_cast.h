@@ -2,7 +2,7 @@
 // GB_cast: definitions for GB_cast_* methods
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -65,7 +65,6 @@ static inline void GB_cast_one  // z = 1 with typecasting zcode
 
 //------------------------------------------------------------------------------
 
-GB_PUBLIC
 void GB_cast_array              // typecast an array
 (
     GB_void *Cx,                // output array

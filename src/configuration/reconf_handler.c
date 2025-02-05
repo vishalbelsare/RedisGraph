@@ -1,10 +1,11 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
+#include "cron/cron.h"
 #include "util/rmalloc.h"
 #include "reconf_handler.h"
 #include "util/thpool/pools.h"
@@ -25,7 +26,7 @@ void reconf_handler(Config_Option_Field type) {
 				ThreadPools_SetMaxPendingWork(max_queued_queries);
 			}
 			break;
-		
+
 		//----------------------------------------------------------------------
 		// query mem capacity
 		//----------------------------------------------------------------------
@@ -39,10 +40,21 @@ void reconf_handler(Config_Option_Field type) {
 			}
 			break;
 
+		case Config_CMD_INFO:
+			{
+				bool info_enabled;
+				bool res = Config_Option_get(type, &info_enabled);
+				ASSERT(res);
+				if(info_enabled) {
+					CronTask_AddStreamFinishedQueries();
+				}
+			}
+			break;
+
         //----------------------------------------------------------------------
         // all other options
         //----------------------------------------------------------------------
-        default : 
+        default:
 			return;
     }
 }

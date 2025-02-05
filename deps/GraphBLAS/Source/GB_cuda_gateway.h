@@ -29,10 +29,6 @@
 // The default value of this parameter is GB_GPU_CHUNK_DEFAULT:
 #define GB_GPU_CHUNK_DEFAULT (1024*1024)
 
-#if defined ( GB_NVCC )
-extern "C" {
-#endif
-
 //------------------------------------------------------------------------------
 // GB_cuda_device: properties of each GPU in the system
 //------------------------------------------------------------------------------
@@ -42,12 +38,12 @@ typedef struct
     char    name [256] ;
     size_t  total_global_memory ;
     int  number_of_sms ;
-    int  compute_capability_major;
-    int  compute_capability_minor;
-    bool use_memory_pool;
-    int  pool_size;             // TODO: should this be size_t?
-    int  max_pool_size;         // TODO: should this be size_t?
-    void *memory_resource;
+    int  compute_capability_major ;
+    int  compute_capability_minor ;
+    bool use_memory_pool ;
+    size_t  pool_size ;
+    size_t  max_pool_size ;
+    void *memory_resource ;
 }
 GB_cuda_device ;
 
@@ -64,19 +60,18 @@ static inline int GB_ngpus_to_use
     // get the current GxB_GPU_CONTROL setting
     GrB_Desc_Value gpu_control = GB_Global_gpu_control_get ( ) ;
 
-    // HACK:
-    gpu_control = GxB_GPU_ALWAYS ;
-
     int gpu_count = GB_Global_gpu_count_get ( ) ;
     if (gpu_control == GxB_GPU_NEVER || gpu_count == 0)
     {
         // never use the GPU(s)
+        printf ("(GPU: disabled, gpu_count: %d) ", gpu_count) ;
         return (0) ;
     }
     else if (gpu_control == GxB_GPU_ALWAYS)
     {
         // always use all available GPU(s)
-        printf ("(using the GPU) ") ;
+        // fixme for CUDA: allow 1 to gpu_count to be requested
+        printf ("(using the GPU: %d) ", gpu_count) ;
         return (gpu_count) ;
     }
     else
@@ -84,6 +79,8 @@ static inline int GB_ngpus_to_use
         // use no more than max_gpus_to_use
         double gpu_chunk = GB_Global_gpu_chunk_get ( ) ;
         double max_gpus_to_use = floor (work / gpu_chunk) ;
+        printf ("(work %g gpu_chunk: %g max gpus to use: %g) ",
+            work, gpu_chunk, max_gpus_to_use) ;
         // but use no more than the # of GPUs available
         if (max_gpus_to_use > gpu_count) return (gpu_count) ;
         return ((int) max_gpus_to_use) ;
@@ -95,11 +92,12 @@ static inline int GB_ngpus_to_use
 // GB_cuda_* gateway functions
 //------------------------------------------------------------------------------
 
+GrB_Info GB_cuda_init (void) ;
+
 bool GB_cuda_get_device_count   // true if OK, false if failure
 (
     int *gpu_count              // return # of GPUs in the system
 ) ;
-
 
 bool GB_cuda_warmup (int device) ;
 
@@ -140,9 +138,17 @@ GrB_Info GB_AxB_dot3_cuda           // C<M> = A'*B using dot product method
     GB_Context Context
 ) ;
 
-#if defined ( GB_NVCC )
-}
-#endif
+
+bool GB_AxB_dot3_cuda_branch
+(
+    const GrB_Matrix M,             // mask matrix
+    const bool Mask_struct,         // if true, use the only structure of M
+    const GrB_Matrix A,             // input matrix
+    const GrB_Matrix B,             // input matrix
+    const GrB_Semiring semiring,    // semiring that defines C=A*B
+    const bool flipxy,              // if true, do z=fmult(b,a) vs fmult(a,b)
+    GB_Context Context
+);
 
 #endif
 

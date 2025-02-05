@@ -1,20 +1,18 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
+from common import *
+from index_utils import *
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from base import FlowTestsBase
-
 redis_graph = None
+GRAPH_ID = "G"
+
 
 class testBoundVariables(FlowTestsBase):
     def __init__(self):
         self.env = Env(decodeResponses=True)
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph("G", redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -62,7 +60,7 @@ class testBoundVariables(FlowTestsBase):
 
     def test03_procedure_match_bound_variable(self):
         # Create a full-text index.
-        redis_graph.call_procedure("db.idx.fulltext.createNodeIndex", 'L', 'val')
+        create_fulltext_index(redis_graph, "L", "val", sync=True)
 
         # Project the result of scanning this index into a MATCH pattern.
         query = """CALL db.idx.fulltext.queryNodes('L', 'v1') YIELD node MATCH (node)-[]->(b) RETURN b.val"""
@@ -91,3 +89,27 @@ class testBoundVariables(FlowTestsBase):
         expected_result = [['v1', 'v2']]
         self.env.assertEquals(actual_result.result_set, expected_result)
 
+    def test05_unwind_reference_entities(self):
+        query = """MATCH ()-[a]->() UNWIND a as x RETURN id(x)"""
+        actual_result = redis_graph.query(query)
+
+        # Verify results.
+        expected_result = [[0], [1], [2]]
+        self.env.assertEquals(actual_result.result_set, expected_result)
+
+    def test06_override_bound_with_label(self):
+        """Tests that we override a bound alias with a new scan if it has a
+        label"""
+
+        # clear the db
+        self.env.flush()
+        redis_graph = Graph(self.env.getConnection(), GRAPH_ID)
+
+        # create one node with label `N`
+        res = redis_graph.query("CREATE (:N)")
+        self.env.assertEquals(res.nodes_created, 1)
+
+        res = redis_graph.query("MATCH(n:N) WITH n MATCH (n:X) RETURN n")
+
+        # make sure no nodes were returned
+        self.env.assertEquals(len(res.result_set), 0)

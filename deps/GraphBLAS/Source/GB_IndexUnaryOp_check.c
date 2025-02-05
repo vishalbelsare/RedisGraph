@@ -2,14 +2,13 @@
 // GB_IndexUnaryOp_check: check and print a index_unary operator
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 #include "GB.h"
 
-GB_PUBLIC
 GrB_Info GB_IndexUnaryOp_check  // check a GraphBLAS index_unary operator
 (
     const GrB_IndexUnaryOp op,  // GraphBLAS operator to print and check
@@ -50,7 +49,7 @@ GrB_Info GB_IndexUnaryOp_check  // check a GraphBLAS index_unary operator
     { 
         GBPR0 ("(built-in) ") ;
     }
-    GBPR0 ("z=%s(x,y)\n", op->name) ;
+    GBPR0 ("z=%s(x,i,j,y)\n", op->name) ;
 
     if (op->idxunop_function == NULL)
     { 
@@ -77,11 +76,16 @@ GrB_Info GB_IndexUnaryOp_check  // check a GraphBLAS index_unary operator
         }
     }
 
-    info = GB_Type_check (op->ytype, "thunk type", pr, f) ;
+    info = GB_Type_check (op->ytype, "ytype", pr, f) ;
     if (info != GrB_SUCCESS)
     { 
-        GBPR0 ("    IndexUnaryOp has an invalid thunk type\n") ;
+        GBPR0 ("    IndexUnaryOp has an invalid ytype\n") ;
         return (GrB_INVALID_OBJECT) ;
+    }
+
+    if (op->defn != NULL)
+    { 
+        GBPR0 ("%s\n", op->defn) ;
     }
 
     return (GrB_SUCCESS) ;

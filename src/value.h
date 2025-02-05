@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 #include <stdio.h>
@@ -41,19 +41,19 @@ typedef enum {
 } SIType;
 
 typedef enum {
-	M_NONE = 0,       // SIValue is not heap-allocated
-	M_SELF = 0x1,     // SIValue is responsible for freeing its reference
-	M_VOLATILE = 0x2, // SIValue does not own its reference and may go out of scope
-	M_CONST = 0x4     // SIValue does not own its allocation, but its access is safe
+	M_NONE = 0,             // SIValue is not heap-allocated
+	M_SELF = (1 << 0),      // SIValue is responsible for freeing its reference
+	M_VOLATILE = (1 << 1),  // SIValue does not own its reference and may go out of scope
+	M_CONST = (1 << 2)      // SIValue does not own its allocation, but its access is safe
 } SIAllocation;
 
 #define SI_TYPE(value) (value).type
+#define SI_ALLOCATION(value) (value)->allocation
 #define SI_NUMERIC (T_INT64 | T_DOUBLE)
 #define SI_GRAPHENTITY (T_NODE | T_EDGE)
-#define SI_ALL (T_MAP | T_NODE | T_EDGE | T_ARRAY | T_PATH | T_DATETIME | T_LOCALDATETIME | T_DATE | T_TIME | T_LOCALTIME | T_DURATION | T_STRING | T_BOOL | T_INT64 | T_DOUBLE | T_NULL | T_PTR)
+#define SI_ALL (T_MAP | T_NODE | T_EDGE | T_ARRAY | T_PATH | T_DATETIME | T_LOCALDATETIME | T_DATE | T_TIME | T_LOCALTIME | T_DURATION | T_STRING | T_BOOL | T_INT64 | T_DOUBLE | T_NULL | T_PTR | T_POINT)
 #define SI_VALID_PROPERTY_VALUE (T_POINT | T_ARRAY | T_DATETIME | T_LOCALDATETIME | T_DATE | T_TIME | T_LOCALTIME | T_DURATION | T_STRING | T_BOOL | T_INT64 | T_DOUBLE)
-#define SI_INDEXABLE (SI_NUMERIC | T_BOOL | T_STRING)
-
+#define SI_INDEXABLE (SI_NUMERIC | T_BOOL | T_STRING | T_POINT)
 
 /* Any values (except durations) are comparable with other values of the same type.
  * Integer and floating-point values are also comparable with each other. */
@@ -75,8 +75,17 @@ typedef enum {
 
 #define DISJOINT INT_MAX
 #define COMPARED_NULL INT_MIN
+#define COMPARED_NAN INT_MIN+1
+
+// Minimum buffer size for string generated in SIType_ToMultipleTypeString
+#define MULTIPLE_TYPE_STRING_BUFFER_SIZE 256
 
 struct Pair;
+
+typedef struct Point {
+	float latitude;   // 32 bit
+	float longitude;  // 32 bit
+} Point;
 
 typedef struct SIValue {
 	union {
@@ -86,10 +95,7 @@ typedef struct SIValue {
 		void *ptrval;
 		struct Pair *map;
 		struct SIValue *array;
-		struct {
-			float latitude;   // 32 bit
-			float longitude;  // 32 bit
-		} point;
+		Point point;
 	};
 	SIType type;
 	SIAllocation allocation;
@@ -153,7 +159,11 @@ bool SIValue_IsTrue(SIValue v);
 
 const char *SIType_ToString(SIType t);
 
-// Prints an SIValue to a given buffer, with length (bufferLen), sets bytesWritten to the actuall length
+// Prints all individual types represented by 't', multiple types are separated by comma,
+// to a given buffer with length (bufferLen)
+void SIType_ToMultipleTypeString(SIType t, char *buf, size_t bufferLen);
+
+// Prints an SIValue to a given buffer, with length (bufferLen), sets bytesWritten to the actual length
 // of string representation
 // if there is not enough space for the value to be printed, the buffer will be re allocated with
 // more space, and bufferLen will change accordingly
@@ -196,6 +206,12 @@ void SIValue_HashUpdate(SIValue v, XXH64_state_t *state);
 
 /* Returns a hash code for a given SIValue. */
 XXH64_hash_t SIValue_HashCode(SIValue v);
+
+// reads SIValue off of binary stream
+SIValue SIValue_FromBinary
+(
+	FILE *stream  // stream to read value from
+);
 
 /* Free an SIValue's internal property if that property is a heap allocation owned
  * by this object. */

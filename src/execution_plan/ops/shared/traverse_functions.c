@@ -1,9 +1,8 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
-
 #include "traverse_functions.h"
 #include "../../../query_ctx.h"
 
@@ -107,19 +106,20 @@ void EdgeTraverseCtx_CollectEdges
 ) {
 	ASSERT(edge_ctx != NULL);
 
-	switch(edge_ctx->direction) {
-	case GRAPH_EDGE_DIR_OUTGOING:
-		_Traverse_CollectEdges(edge_ctx, src, dest);
-		return;
-	case GRAPH_EDGE_DIR_INCOMING:
-		// If we're traversing incoming edges, swap the source and destination.
-		_Traverse_CollectEdges(edge_ctx, dest, src);
-		return;
-	case GRAPH_EDGE_DIR_BOTH:
-		// If we're traversing in both directions, collect edges in both directions.
-		_Traverse_CollectEdges(edge_ctx, src, dest);
-		_Traverse_CollectEdges(edge_ctx, dest, src);
-		return;
+	GRAPH_EDGE_DIR dir = src == dest ? GRAPH_EDGE_DIR_OUTGOING : edge_ctx->direction;
+	switch(dir) {
+		case GRAPH_EDGE_DIR_OUTGOING:
+			_Traverse_CollectEdges(edge_ctx, src, dest);
+			return;
+		case GRAPH_EDGE_DIR_INCOMING:
+			// If we're traversing incoming edges, swap the source and destination.
+			_Traverse_CollectEdges(edge_ctx, dest, src);
+			return;
+		case GRAPH_EDGE_DIR_BOTH:
+			// If we're traversing in both directions, collect edges in both directions.
+			_Traverse_CollectEdges(edge_ctx, src, dest);
+			_Traverse_CollectEdges(edge_ctx, dest, src);
+			return;
 	}
 }
 

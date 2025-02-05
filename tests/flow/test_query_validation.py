@@ -1,15 +1,8 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
-import redis
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
+from common import *
 
 redis_con = None
 redis_graph = None
+
 
 class testQueryValidationFlow(FlowTestsBase):
 
@@ -18,7 +11,7 @@ class testQueryValidationFlow(FlowTestsBase):
         global redis_con
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph("G", redis_con)
+        redis_graph = Graph(redis_con, "G")
         self.populate_graph()
     
     def populate_graph(self):
@@ -78,6 +71,14 @@ class testQueryValidationFlow(FlowTestsBase):
 
         try:
             query = """MATCH (a) RETURN a ORDER BY e"""
+            redis_graph.query(query)
+            assert(False)
+        except redis.exceptions.ResponseError:
+            # Expecting an error.
+            pass
+
+        try:
+            query = """MATCH (@anon_0) RETURN @anon_0"""
             redis_graph.query(query)
             assert(False)
         except redis.exceptions.ResponseError:
@@ -278,7 +279,7 @@ class testQueryValidationFlow(FlowTestsBase):
             assert(False)
         except redis.exceptions.ResponseError as e:
             # Expecting an error.
-            assert("Type mismatch: expected Node but was Path" in str(e))
+            assert("Type mismatch: expected Map, Node, Edge, Null, or Point but was Path" in str(e))
             pass
 
     # Comments should not affect query functionality.
@@ -344,16 +345,6 @@ class testQueryValidationFlow(FlowTestsBase):
         query = """CALL db.idx.fulltext.queryNodes('A', 'B') YIELD node AS n RETURN n"""
         redis_graph.query(query)
 
-    # Applying a filter for a non-boolean constant should raise a compile-time error.
-    def test23_invalid_constant_filter(self):
-        try:
-            query = """MATCH (a) WHERE 1 RETURN a"""
-            redis_graph.query(query)
-            assert(False)
-        except redis.exceptions.ResponseError as e:
-            assert("Expected boolean predicate" in str(e))
-            pass
-
     # Referencing a variable before defining it should raise a compile-time error.
     def test24_reference_before_definition(self):
         try:
@@ -373,31 +364,29 @@ class testQueryValidationFlow(FlowTestsBase):
             assert(False)
         except redis.exceptions.ResponseError as e:
             # Expecting an error.
-            assert("Type mismatch: expected Node but was Path" in str(e))
+            assert("Type mismatch: expected Map, Node, Edge, Null, or Point but was Path" in str(e))
             pass
 
-    # Scalar predicates in filters should raise errors.
+    # invalid predicates should raise errors.
     def test26_invalid_filter_predicate(self):
-        try:
-            query = """WITH 1 AS a WHERE '' RETURN a"""
-            redis_graph.query(query)
-            assert(False)
-        except redis.exceptions.ResponseError as e:
-            # Expecting an error.
-            assert("Expected boolean predicate" in str(e))
-            pass
+        queries = [
+            """WITH 1 AS a WHERE '' RETURN a""",
+            """MATCH (a) WHERE 1 RETURN a""",
+            """MATCH (a) WHERE -1 RETURN a""",
+            """MATCH (a) WHERE -1 OR true RETURN a""",
+            """MATCH (a) WHERE true OR -1 RETURN a""",
+            """MATCH (a) WHERE true AND -1 RETURN a""",
+            """MATCH (a:Author) WHERE a.name CONTAINS 'Ernest' OR 'Amor' RETURN a""",
+            """MATCH () RETURN [()<-[]-() WHERE 1 | TRUE]"""]
 
-    # Conditional filters with non-boolean scalar predicate children should raise errors.
-    def test27_invalid_filter_predicate_child(self):
-        try:
-            # 'Amor' is an invalid construct for the RHS of 'OR'.
-            query = """MATCH (a:Author) WHERE a.name CONTAINS 'Ernest' OR 'Amor' RETURN a"""
-            redis_graph.query(query)
-            assert(False)
-        except redis.exceptions.ResponseError as e:
-            # Expecting an error.
-            assert("Expected boolean predicate" in str(e))
-            pass
+        for query in queries:
+            try:
+                redis_graph.query(query)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                # Expecting an error.
+                assert("Expected boolean predicate" in str(e))
+                pass
 
     # The NOT operator does not compare left and right side expressions.
     def test28_invalid_filter_binary_not(self):
@@ -456,10 +445,6 @@ class testQueryValidationFlow(FlowTestsBase):
             assert("Encountered unhandled type" in str(e))
 
     def test31_set_invalid_property_type(self):
-        # Skip this test if running under Valgrind, as it causes a memory leak.
-        if self.env.envRunner.debugger is not None:
-            self.env.skip()
-
         queries = ["""MATCH (a) CREATE (:L {v: a})""",
                    """MATCH (a), (b) WHERE b.age IS NOT NULL SET b.age = a""",
                    """MERGE (a) ON MATCH SET a.age = a"""]
@@ -504,14 +489,10 @@ class testQueryValidationFlow(FlowTestsBase):
             assert(False)
         except redis.exceptions.ResponseError as e:
             # Expecting an error.
-            assert("Attempted to access variable" in str(e))
+            assert("'a' not defined" in str(e))
             pass
 
     def test34_self_referential_properties(self):
-        # Skip this test if running under Valgrind, as it causes a memory leak.
-        if self.env.envRunner.debugger is not None:
-            self.env.skip()
-
         try:
             # The server should emit an error on trying to create a node with a self-referential property.
             query = """CREATE (a:L {v: a.v})"""
@@ -519,7 +500,7 @@ class testQueryValidationFlow(FlowTestsBase):
             assert(False)
         except redis.exceptions.ResponseError as e:
             # Expecting an error.
-            self.env.assertIn("undefined property", str(e))
+            self.env.assertIn("undefined attribute", str(e))
 
         # MATCH clauses should be able to use self-referential properties as existential filters.
         query = """MATCH (a {age: a.age}) RETURN a.age"""
@@ -561,3 +542,150 @@ class testQueryValidationFlow(FlowTestsBase):
             except redis.exceptions.ResponseError as e:
                 pass
 
+    def test38_return_star_union(self):
+        # queries of the form [...] RETURN * UNION [...] should have
+        # all relevant validations on their column names enforced
+        queries = ["WITH 5 AS x RETURN * UNION WITH 10 AS y RETURN *",
+                   "WITH 5 AS x RETURN * UNION WITH 10 AS y RETURN y",
+                   "WITH 5 AS x, 8 AS y RETURN * UNION WITH 10 AS y RETURN y"]
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("All sub queries in a UNION must have the same column names", str(e))
+
+    def test39_non_single_statement_query(self):
+        queries = [";",
+                   " ;",
+                   " ",
+                   "cypher"]
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("empty query", str(e))
+        
+        queries = ["MATCH (n) RETURN n; MATCH"]
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("query with more than one statement is not supported", str(e))
+
+    def test40_compile_time_errors_in_star_projections(self):
+        # validate that parser errors are handled correctly
+        # in queries containing star projections
+        queries = ["MATCH (a)-[r:]->(b) RETURN *",
+                   "MATCH (a)-[r:]->(b) WITH b RETURN *"]
+        for query in queries:
+            try:
+                redis_graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError:
+                pass
+
+        # check that AST validation errors are handled correctly
+        # in queries containing star projections
+        queries = ["WITH 1 RETURN *",
+                   "RETURN *",
+                   "CREATE () RETURN DISTINCT *",
+                   "MATCH () WITH * RETURN z",
+                   "MATCH () WITH * RETURN *",
+                   "MATCH () WITH * WHERE n.v > 1 RETURN *"]
+        for query in queries:
+            try:
+                redis_graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError:
+                pass
+
+    # Test returning multiple occurrence of an expression.
+    def test41_return_duplicate_expression(self):
+        queries = ["""MATCH (a) RETURN max(a.val), max(a.val)""",
+                """MATCH (a) return max(a.val) as x, max(a.val) as x""",
+                """MATCH (a) RETURN a.val, a.val LIMIT 1""",
+                """MATCH (a) return a.val as x, a.val as x LIMIT 1""",
+                """WITH 1 AS a, 1 AS a RETURN a""",
+                """MATCH (n) WITH n, n RETURN n"""]
+
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("Multiple result columns with the same name are not supported", str(e))
+
+    # Test fail with unknown function.
+    def test42_unknown_function(self):
+        queries = ["""MATCH (a { v: x()}) RETURN a""",
+                """MERGE (a { v: x()}) RETURN a""",
+                """MERGE (a) ON CREATE SET a.v = x() RETURN a""",
+                """CREATE (a { v: x()}) RETURN a""",
+                """MATCH (n) RETURN shortestPath(n, n)""",
+                """MATCH p=()-[*1..5]->() RETURN shortestPath(p)""",
+                """RETURN ge(1, 2)"""]
+
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                assert(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("Unknown function", str(e))
+    
+    # Variable length edges are not allowed in CREATE or MERGE clauses.
+    def test43_invalid_variable_length_edge_use(self):
+        queries = [
+            """CREATE (a:A)-[e:E1*]->(b:B)""",
+            """CREATE (a:A)-[e1:E1]->(b:B)-[e2:E2*]->(c:C)""",
+            """MERGE (a:A)-[e:E1*]->(b:B)""",
+            """MERGE (a:A)-[e1:E1]->(b:B)-[e2:E2*]->(c:C)""",
+        ]
+        for q in queries:
+            try:
+                redis_graph.query(q)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError as e:
+                self.env.assertContains("Variable length relationships cannot be used in", str(e))
+
+    def test44_undefined_variables(self):
+        # invalid usage of undefined variables in a `WITH` clause
+        invalid_queries = [
+            "WITH a RETURN a",
+            "WITH a AS a RETURN a",
+            "WITH [a] AS a RETURN a",
+            "WITH [a[a[a]]] AS a RETURN a",
+            "WITH a AS b, b AS c, c AS a RETURN a",
+            "WITH {a:a} AS a RETURN a",
+            "WITH a RETURN 0",
+            "WITH 3 AS a, 4 AS b, a + b AS c RETURN c",
+            "WITH [x in a | x.prop1] AS a RETURN 1",
+            "WITH [(n)-[x:R]->(m) | a.prop1] AS a RETURN 1"
+        ]
+        for query in invalid_queries:
+            try:
+                redis_graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError as e:
+                # Expecting an error.
+                self.env.assertIn("'a' not defined", str(e))
+
+        # invalid usage of undefined variables in a `RETURN` clause
+        invalid_queries = [
+            "RETURN a AS a",
+            "RETURN [a] AS a",
+            "RETURN [a[a[a]]] AS a",
+            "RETURN a AS b, b AS c, c AS a",
+            "RETURN {a:a} AS a",
+            "RETURN [x in a | x.prop1] AS a",
+            "RETURN [(n)-[x:R]->(m) | a.prop1] AS a"
+        ]
+        for query in invalid_queries:
+            try:
+                redis_graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError as e:
+                # Expecting an error.
+                self.env.assertIn("'a' not defined", str(e))

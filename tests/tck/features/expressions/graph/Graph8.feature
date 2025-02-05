@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 
 Feature: Graph8 - Property keys function
 
-  @skip
   Scenario: [1] Using `keys()` on a single node, non-empty result
     Given an empty graph
     And having executed:
@@ -49,7 +48,6 @@ Feature: Graph8 - Property keys function
       | 'surname' |
     And no side effects
 
-  @skip
   Scenario: [2] Using `keys()` on multiple nodes, non-empty result
     Given an empty graph
     And having executed:
@@ -71,7 +69,6 @@ Feature: Graph8 - Property keys function
       | 'otherSurname' |
     And no side effects
 
-  @skip
   Scenario: [3] Using `keys()` on a single node, empty result
     Given an empty graph
     And having executed:
@@ -88,7 +85,6 @@ Feature: Graph8 - Property keys function
       | theProps |
     And no side effects
 
-  @skip
   Scenario: [4] Using `keys()` on an optionally matched node
     Given an empty graph
     And having executed:
@@ -105,7 +101,6 @@ Feature: Graph8 - Property keys function
       | theProps |
     And no side effects
 
-  @skip
   Scenario: [5] Using `keys()` on a relationship, non-empty result
     Given an empty graph
     And having executed:
@@ -124,7 +119,6 @@ Feature: Graph8 - Property keys function
       | 'year'   |
     And no side effects
 
-  @skip
   Scenario: [6] Using `keys()` on a relationship, empty result
     Given an empty graph
     And having executed:
@@ -141,7 +135,6 @@ Feature: Graph8 - Property keys function
       | theProps |
     And no side effects
 
-  @skip
   Scenario: [7] Using `keys()` on an optionally matched relationship
     Given an empty graph
     And having executed:
@@ -156,4 +149,22 @@ Feature: Graph8 - Property keys function
       """
     Then the result should be, in any order:
       | theProps |
+    And no side effects
+
+  Scenario: [8] Using `keys()` and `IN` to check property existence
+    Given an empty graph
+    And having executed:
+      """
+      CREATE ({exists: 42, missing: null})
+      """
+    When executing query:
+      """
+      MATCH (n)
+      RETURN 'exists' IN keys(n) AS a,
+             'missing' IN keys(n) AS b,
+             'missingToo' IN keys(n) AS c
+      """
+    Then the result should be, in any order:
+      | a    | b     | c     |
+      | true | false | false |
     And no side effects

@@ -1,7 +1,7 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #pragma once
@@ -16,8 +16,7 @@ typedef struct {
 	int *reltypes;               /* Relationship type IDs */
 	uint reltype_count;          /* Number of traversed relationship types */
 	GrB_Matrix R;                /* Traversed relationship matrix */
-	GrB_Matrix TR;               /* Transpose of traversed relationship matrix */
-	bool free_matrices;          /* If true, R and TR will ultimately be freed */
+	bool free_matrices;          /* If true, R will ultimately be freed */
 } ShortestPathCtx;
 
 void Register_PathFuncs();

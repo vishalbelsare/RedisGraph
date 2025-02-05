@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 
 Feature: Delete2 - Deleting relationships
 
-  @skip
   Scenario: [1] Delete relationships
     Given an empty graph
     And having executed:
@@ -63,7 +62,6 @@ Feature: Delete2 - Deleting relationships
     And the side effects should be:
       | -nodes | 1 |
 
-  @skip
   Scenario: [3] Delete relationship with bidirectional matching
     Given an empty graph
     And having executed:
@@ -79,7 +77,6 @@ Feature: Delete2 - Deleting relationships
     Then the result should be empty
     And the side effects should be:
       | -relationships | 1 |
-      | -properties    | 1 |
 
 
   Scenario: [4] Ignore null when deleting relationship
@@ -95,7 +92,6 @@ Feature: Delete2 - Deleting relationships
       | null |
     And no side effects
 
-  @NegativeTest
   @skip
   Scenario: [5] Failing when deleting a relationship type
     Given an empty graph

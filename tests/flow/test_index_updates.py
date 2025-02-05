@@ -1,13 +1,7 @@
-import os
-import sys
-import random
 import string
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
+import random
+from common import *
+from index_utils import *
 
 GRAPH_ID = "G"
 redis_graph = None
@@ -16,12 +10,13 @@ fields = ['unique', 'group', 'doubleval', 'intval', 'stringval']
 groups = ["Group A", "Group B", "Group C","Group D", "Group E"]
 node_ctr = 0
 
+
 class testIndexUpdatesFlow(FlowTestsBase):
     def __init__(self):
         self.env = Env(decodeResponses=True)
         global redis_graph
-        redis_con = self.env.getConnection()
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        self.redis_con = self.env.getConnection()
+        redis_graph = Graph(self.redis_con, GRAPH_ID)
         self.populate_graph()
         self.build_indices()
 
@@ -43,8 +38,9 @@ class testIndexUpdatesFlow(FlowTestsBase):
 
     def build_indices(self):
         for field in fields:
-            redis_graph.query("CREATE INDEX ON :label_a(%s)" % (field))
-            redis_graph.query("CREATE INDEX ON :label_b(%s)" % (field))
+            create_node_exact_match_index(redis_graph, 'label_a', field)
+            create_node_exact_match_index(redis_graph, 'label_b', field)
+        wait_for_indices_to_sync(redis_graph)
 
     # Validate that all properties are indexed
     def validate_indexed(self):
@@ -100,14 +96,14 @@ class testIndexUpdatesFlow(FlowTestsBase):
 
     # Modify a property, triggering updates to all nodes in two indices
     def test01_full_property_update(self):
-        result = redis_graph.query("MATCH (a) SET a.doubleval = a.doubleval + %f" % (round(random.uniform(-1, 1), 2)))
+        result = redis_graph.query("MATCH (a) SET a.doubleval = a.doubleval + 1.1")
         self.env.assertEquals(result.properties_set, 1000)
         # Verify that index scans still function and return correctly
         self.validate_state()
 
     # Modify a property, triggering updates to a subset of nodes in two indices
     def test02_partial_property_update(self):
-        redis_graph.query("MATCH (a) WHERE a.doubleval > 0 SET a.doubleval = a.doubleval + %f" % (round(random.uniform(-1, 1), 2)))
+        redis_graph.query("MATCH (a) WHERE a.doubleval > 0 SET a.doubleval = a.doubleval + 1.1")
         # Verify that index scans still function and return correctly
         self.validate_state()
 
@@ -160,12 +156,13 @@ class testIndexUpdatesFlow(FlowTestsBase):
         result = redis_graph.query(query)
         self.env.assertEquals(result.properties_set, 1)
         self.env.assertEquals(result.labels_added, 1)
-        redis_graph.query("CREATE INDEX ON :NEW(v)")
+        create_node_exact_match_index(redis_graph, 'NEW', 'v', sync=True)
 
         # Delete the entity's property
         query = """MATCH (a:NEW {v: 5}) SET a.v = NULL"""
         result = redis_graph.query(query)
-        self.env.assertEquals(result.properties_set, 1)
+        self.env.assertEquals(result.properties_set, 0)
+        self.env.assertEquals(result.properties_removed, 1)
 
         # Query the index for the entity
         query = """MATCH (a:NEW {v: 5}) RETURN a"""
@@ -184,9 +181,11 @@ class testIndexUpdatesFlow(FlowTestsBase):
     # index does not track the property.
     def test07_update_property_only_on_fulltext_index(self):
         # Remove the exact-match index on a property
-        redis_graph.redis_con.execute_command("GRAPH.QUERY", GRAPH_ID, "DROP INDEX ON :label_a(group)")
+        drop_exact_match_index(redis_graph, 'label_a', 'group')
+
         # Add a full-text index on the property
-        redis_graph.query("CALL db.idx.fulltext.createNodeIndex('label_a', 'group')")
+        result = create_fulltext_index(redis_graph, 'label_a', 'group', sync=True)
+        self.env.assertEquals(result.indices_created, 1)
 
         # Modify the values of the property
         result = redis_graph.query("MATCH (a:label_a) WHERE a.group = 'Group C' SET a.group = 'Group NEW'")
@@ -200,3 +199,4 @@ class testIndexUpdatesFlow(FlowTestsBase):
         # Validate that the previous value has been removed
         result = redis_graph.query("CALL db.idx.fulltext.queryNodes('label_a', 'Group C')")
         self.env.assertEquals(len(result.result_set), 0)
+

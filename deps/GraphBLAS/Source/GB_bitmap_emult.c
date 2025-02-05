@@ -2,7 +2,7 @@
 // GB_bitmap_emult: C = A.*B, C<M>=A.*B, or C<!M>=A.*B when C is bitmap
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -61,7 +61,8 @@
 #include "GB_binop.h"
 #include "GB_unused.h"
 #include "GB_ek_slice.h"
-#ifndef GBCOMPACT
+#include "GB_stringify.h"
+#ifndef GBCUDA_DEV
 #include "GB_binop__include.h"
 #endif
 
@@ -73,7 +74,7 @@
 #define GB_FREE_ALL                         \
 {                                           \
     GB_FREE_WORKSPACE ;                     \
-    GB_phbix_free (C) ;                     \
+    GB_phybix_free (C) ;                    \
 }
 
 GrB_Info GB_bitmap_emult    // C=A.*B, C<M>=A.*B, or C<!M>=A.*B
@@ -98,7 +99,7 @@ GrB_Info GB_bitmap_emult    // C=A.*B, C<M>=A.*B, or C<!M>=A.*B
     //--------------------------------------------------------------------------
 
     GrB_Info info ;
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
 
     ASSERT_MATRIX_OK (A, "A for bitmap emult ", GB0) ;
     ASSERT_MATRIX_OK (B, "B for bitmap emult ", GB0) ;
@@ -161,13 +162,18 @@ GrB_Info GB_bitmap_emult    // C=A.*B, C<M>=A.*B, or C<!M>=A.*B
     GB_void cscalar [GB_VLA(csize)] ;
     bool C_iso = GB_iso_emult (cscalar, ctype, A, B, op) ;
 
+    #ifdef GB_DEBUGIFY_DEFN
+    GB_debugify_ewise (C_iso, GxB_BITMAP, ctype, M,
+        Mask_struct, Mask_comp, op, false, A, B) ;
+    #endif
+
     //--------------------------------------------------------------------------
     // allocate the output matrix C
     //--------------------------------------------------------------------------
 
     // allocate the result C (but do not allocate C->p or C->h)
     // set C->iso = C_iso   OK
-    GB_OK (GB_new_bix (&C, true,  // bitmap, static header
+    GB_OK (GB_new_bix (&C, // bitmap, existing header
         ctype, A->vlen, A->vdim, GB_Ap_null, C_is_csc,
         GxB_BITMAP, true, A->hyper_switch, -1, cnz, true, C_iso, Context)) ;
 
@@ -216,7 +222,7 @@ GrB_Info GB_bitmap_emult    // C=A.*B, C<M>=A.*B, or C<!M>=A.*B
     else
     {
 
-        #ifndef GBCOMPACT
+        #ifndef GBCUDA_DEV
 
             //------------------------------------------------------------------
             // define the worker for the switch factory

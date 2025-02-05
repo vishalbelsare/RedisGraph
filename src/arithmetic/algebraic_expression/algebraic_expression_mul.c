@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "utils.h"
 #include "../../query_ctx.h"
@@ -39,9 +39,6 @@ RG_Matrix _Eval_Mul
 
 		M = c->operand.matrix ;
 
-		// skip identity matrix, A*I = A
-		if(M == IDENTITY_MATRIX) continue ;
-
 		// first time A is set
 		if(A == NULL) {
 			A = M ;
@@ -61,8 +58,6 @@ RG_Matrix _Eval_Mul
 	}
 
 	if(!res_modified) {
-		// expecting at-least one operand not to be the identity matrix
-		ASSERT(A != IDENTITY_MATRIX) ;
 		info = RG_Matrix_copy(res, A) ;
 		ASSERT(info == GrB_SUCCESS) ;
 	}

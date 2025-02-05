@@ -1,15 +1,9 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
+from common import *
 
 GRAPH_ID = "G"
 redis_con = None
 redis_graph = None
+
 
 class testRelationPattern(FlowTestsBase):
     def __init__(self):
@@ -17,7 +11,7 @@ class testRelationPattern(FlowTestsBase):
         global redis_con
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -57,9 +51,16 @@ class testRelationPattern(FlowTestsBase):
         query = """MATCH (a)-[*1]->(b) RETURN a.val, b.val ORDER BY a.val, b.val"""
         result_d = redis_graph.query(query)
 
+        # default minimum length is 1
+        # the following query is equivalent to:
+        # MATCH (a)-[]->(b) RETURN a.val, b.val ORDER BY a.val, b.val
+        query = """MATCH (a)-[*..1]->(b) RETURN a.val, b.val ORDER BY a.val, b.val"""
+        result_e = redis_graph.query(query)
+
         self.env.assertEquals(result_b.result_set, result_a.result_set)
         self.env.assertEquals(result_c.result_set, result_a.result_set)
         self.env.assertEquals(result_d.result_set, result_a.result_set)
+        self.env.assertEquals(result_e.result_set, result_a.result_set)
 
     # Test patterns that traverse 2 edges.
     def test02_two_hop_traversals(self):
@@ -231,7 +232,7 @@ class testRelationPattern(FlowTestsBase):
 
     def test07_transposed_multi_hop(self):
         redis_con = self.env.getConnection()
-        g = Graph("tran_multi_hop", redis_con)
+        g = Graph(redis_con, "tran_multi_hop")
 
         # (a)-[R]->(b)-[R]->(c)<-[R]-(d)<-[R]-(e)
         a = Node(properties={"val": 'a'})
@@ -272,7 +273,7 @@ class testRelationPattern(FlowTestsBase):
 
     def test09_transposed_elem_order(self):
         redis_con = self.env.getConnection()
-        g = Graph("transpose_patterns", redis_con)
+        g = Graph(redis_con, "transpose_patterns")
 
         # Create a new graph of the form:
         # (A)<-[1]-(B)-[2]->(C)
@@ -293,7 +294,7 @@ class testRelationPattern(FlowTestsBase):
         # (A)-[X]->(B)
         # (A)-[Y]->(C)
         # (A)-[Z]->(D)
-        g = Graph("triple_edge_type", redis_con)
+        g = Graph(redis_con, "triple_edge_type")
         q = "CREATE(a:A), (b:B), (c:C), (d:D), (a)-[:X]->(b), (a)-[:Y]->(c), (a)-[:Z]->(d)"
         g.query(q)
 
@@ -306,3 +307,70 @@ class testRelationPattern(FlowTestsBase):
             res = g.query(q.format(L0=perm[0], L1=perm[1], L2=perm[2]))
             self.env.assertEquals(res.result_set, expected_result)
 
+    def test11_shared_node_detection(self):
+        # Construct a simple graph
+        # (s)<-[:A]-(x)
+        # (x)<-[:B]-(x)
+        # (x)-[:B]->(t)
+        # (t)<-[:B]-(x)
+        g = Graph(redis_con, "shared_node")
+        q = "MERGE (s)<-[:A]-(x)<-[:B]-(x)-[:B]->(t)<-[:B]-(x)"
+        result = g.query(q)
+
+        self.env.assertEquals(result.nodes_created, 3)
+        self.env.assertEquals(result.relationships_created, 4)
+
+        result = g.query(q)
+        self.env.assertEquals(result.nodes_created, 0)
+        self.env.assertEquals(result.relationships_created, 0)
+
+    # test error reporting for invalid min, max variable length edge length
+    def test12_lt_zero_hop_traversals(self):
+        # Construct an empty graph
+        g = Graph(redis_con, "lt_zero_hop_traversals")
+
+        queries = [
+            "MATCH p=()-[*..0]->() RETURN nodes(p) AS nodes",
+            "MATCH p=()-[*1..0]->() RETURN nodes(p) AS nodes",
+            "MATCH p=()-[*2..1]->() RETURN nodes(p) AS nodes",
+            "MATCH p=()-[e*2..1]->() RETURN nodes(p) AS nodes",
+            "MATCH p=()-[e:R*20..10]->() RETURN nodes(p) AS nodes",
+            "MATCH p=()-[]->()-[*1..0]->() RETURN nodes(p) AS nodes",
+        ]
+        for query in queries:
+            self._assert_exception(g, query,
+                "Variable length path, maximum number of hops must be greater or equal to minimum number of hops.")
+
+    def test13_return_var_len_edge_array(self):
+        # Construct a simple graph:
+        # (A)-[R]->(b)
+        # (b)-[R]->(c)
+        g = Graph(redis_con, "return_var_len_edge_array")
+        q = "CREATE (a)-[:R]->(b)-[:R]->(c)"
+        g.query(q)
+
+        query_to_expected_result = [
+            ("MATCH (a)-[r*2..2]->(b) RETURN size(nodes(r))" , [[3]]),
+            ("MATCH (a)-[r:R*2..2]->(b) RETURN size(nodes(r))" , [[3]]),
+            ("MATCH (a)-[r*1..2]->(b) RETURN size(nodes(r)) AS x ORDER BY x" , [[2], [2], [3]]),
+            ("MATCH (a)-[r*0..2]->(b) RETURN size(nodes(r)) AS x ORDER BY x" , [[1], [1], [1], [2], [2], [3]]),
+            ("MATCH (a)-[r*0..1]->(b) RETURN size(nodes(r)) AS x ORDER BY x" , [[1], [1], [1], [2], [2]]),
+            ("MATCH (a)-[r*0..0]->(b) RETURN size(nodes(r)) AS x ORDER BY x" , [[1], [1], [1]]),
+        ]
+        for query, expected_result in query_to_expected_result:
+            actual_result = g.query(query)
+            self.env.assertEquals(actual_result.result_set, expected_result)
+
+        # for patterns of length equals to one, the expected result is of type edge
+        q = "MATCH (a)-[r*1..1]->(b) RETURN r"
+        actual_result = g.query(q)
+
+        e01 = actual_result.result_set[0][0]      
+        self.env.assertEquals(e01.src_node, 0)
+        self.env.assertEquals(e01.dest_node, 1)
+        self.env.assertEquals(e01.relation, 'R')
+
+        e12 = actual_result.result_set[1][0]
+        self.env.assertEquals(e12.src_node, 1)
+        self.env.assertEquals(e12.dest_node, 2)
+        self.env.assertEquals(e12.relation, 'R')

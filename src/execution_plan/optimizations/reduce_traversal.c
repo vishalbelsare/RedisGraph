@@ -1,15 +1,15 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
 #include "../../util/arr.h"
-#include "../../util/strcmp.h"
 #include "../ops/op_expand_into.h"
 #include "../ops/op_conditional_traverse.h"
 #include "../ops/op_cond_var_len_traverse.h"
+#include "../execution_plan_build/execution_plan_util.h"
 #include "../execution_plan_build/execution_plan_modify.h"
 
 /* Reduce traversal searches for traversal operations where
@@ -34,7 +34,7 @@ static inline bool _isInSubExecutionPlan(OpBase *op) {
 static void _removeRedundantTraversal(ExecutionPlan *plan, OpCondTraverse *traverse) {
 	AlgebraicExpression *ae =  traverse->ae;
 	if(AlgebraicExpression_OperandCount(ae) == 1 &&
-	   !RG_STRCMP(AlgebraicExpression_Src(ae), AlgebraicExpression_Dest(ae))) {
+	   !strcmp(AlgebraicExpression_Src(ae), AlgebraicExpression_Dest(ae))) {
 		ExecutionPlan_RemoveOp(plan, (OpBase *)traverse);
 		OpBase_Free((OpBase *)traverse);
 	}
@@ -45,7 +45,7 @@ static void _removeRedundantTraversal(ExecutionPlan *plan, OpCondTraverse *trave
  * are already resolved, in which case replace traversal operation
  * with expand-into op. */
 void reduceTraversal(ExecutionPlan *plan) {
-	OpBase **traversals = ExecutionPlan_CollectOpsMatchingType(plan->root, TRAVERSE_OPS,
+	OpBase **traversals = ExecutionPlan_CollectOpsMatchingTypes(plan->root, TRAVERSE_OPS,
 															   TRAVERSE_OP_COUNT);
 	uint traversals_count = array_len(traversals);
 
@@ -74,14 +74,15 @@ void reduceTraversal(ExecutionPlan *plan) {
 		 * in this case there will be a traverse operation which will
 		 * filter our dest nodes (b) which aren't of type B. */
 
-		if(!RG_STRCMP(AlgebraicExpression_Src(ae), AlgebraicExpression_Dest(ae)) &&
+		if(!strcmp(AlgebraicExpression_Src(ae), AlgebraicExpression_Dest(ae)) &&
 		   AlgebraicExpression_OperandCount(ae) == 1 &&
 		   AlgebraicExpression_DiagonalOperand(ae, 0)) continue;
 
 		// Collect variables bound before this op.
 		rax *bound_vars = raxNew();
 		for(int i = 0; i < op->childCount; i ++) {
-			ExecutionPlan_BoundVariables(op->children[i], bound_vars);
+			ExecutionPlan_BoundVariables(op->children[i], bound_vars,
+				op->children[i]->plan);
 		}
 
 		const char *dest = AlgebraicExpression_Dest(ae);

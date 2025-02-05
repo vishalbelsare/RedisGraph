@@ -1,7 +1,5 @@
-from RLTest import Env
-from base import FlowTestsBase
-from redis import ResponseError
-from redisgraph import Graph, Node, Edge
+import asyncio
+from common import *
 from pathos.pools import ProcessPool as Pool
 from pathos.helpers import mp as pathos_multiprocess
 
@@ -9,10 +7,11 @@ GRAPH_ID = "G"                      # Graph identifier.
 CLIENT_COUNT = 16                   # Number of concurrent connections.
 people = ["Roi", "Alon", "Ailon", "Boaz", "Tal", "Omri", "Ori"]
 
+
 def thread_run_query(query, barrier):
     env = Env(decodeResponses=True)
     conn = env.getConnection()
-    graph = Graph(GRAPH_ID, conn)
+    graph = Graph(conn, GRAPH_ID)
 
     if barrier is not None:
         barrier.wait()
@@ -28,7 +27,7 @@ def thread_run_query(query, barrier):
 def delete_graph(graph_id):
     env = Env(decodeResponses=True)
     conn = env.getConnection()
-    graph = Graph(graph_id, conn)
+    graph = Graph(conn, graph_id)
 
     # Try to delete graph.
     try:
@@ -46,17 +45,21 @@ def run_concurrent(queries, f):
     barriers = [barrier] * CLIENT_COUNT
 
     # invoke queries
-    return pool.map(f, queries, barriers)
+    results = pool.map(f, queries, barriers)
+
+    pool.clear()
+
+    return results
 
 class testConcurrentQueryFlow(FlowTestsBase):
     def __init__(self):
         self.env = Env(decodeResponses=True)
         # skip test if we're running under Valgrind
-        if self.env.envRunner.debugger is not None:
+        if VALGRIND:
             self.env.skip() # valgrind is not working correctly with multi processing
 
         self.conn = self.env.getConnection()
-        self.graph = Graph(GRAPH_ID, self.conn)
+        self.graph = Graph(self.conn, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -113,6 +116,8 @@ class testConcurrentQueryFlow(FlowTestsBase):
 
         # Exactly one thread should have successfully deleted the graph.
         self.env.assertEquals(assertions.count(True), 1)
+
+        pool.clear()
 
     # Try to delete a graph while multiple queries are executing.
     def test_05_concurrent_read_delete(self):
@@ -195,6 +200,8 @@ class testConcurrentQueryFlow(FlowTestsBase):
         resultset = self.graph.query("MATCH (n) RETURN count(n)").result_set
         self.env.assertEquals(resultset[0][0], 0)
 
+        pool.clear()
+
     def test_06_concurrent_write_delete(self):
         # Test setup - validate that graph exists and possible results are None
         self.graph.query("MATCH (n) RETURN n")
@@ -211,6 +218,8 @@ class testConcurrentQueryFlow(FlowTestsBase):
             self.env.assertContains(result, possible_exceptions)
         else:
             self.env.assertEquals(1000000, result["result_set"][0][0])
+
+        pool.clear()
     
     def test_07_concurrent_write_rename(self):
         # Test setup - validate that graph exists and possible results are None
@@ -237,6 +246,8 @@ class testConcurrentQueryFlow(FlowTestsBase):
             self.env.assertContains(result, possible_exceptions)
         else:
             self.env.assertEquals(1000000, result["result_set"][0][0])
+
+        pool.clear()
         
     def test_08_concurrent_write_replace(self):
         # Test setup - validate that graph exists and possible results are None
@@ -263,9 +274,11 @@ class testConcurrentQueryFlow(FlowTestsBase):
         # Delete the key
         self.conn.delete(GRAPH_ID)
 
+        pool.clear()
+
     def test_09_concurrent_multiple_readers_after_big_write(self):
         # Test issue #890
-        self.graph = Graph(GRAPH_ID, self.conn)
+        self.graph = Graph(self.conn, GRAPH_ID)
         self.graph.query("""UNWIND(range(0,999)) as x CREATE()-[:R]->()""")
         read_query = """MATCH (n)-[r:R]->(m) RETURN count(r) AS res UNION RETURN 0 AS res"""
 
@@ -292,7 +305,7 @@ class testConcurrentQueryFlow(FlowTestsBase):
         # this test issues a similar sequence of queries and
         # validates that the write query wasn't delayed too much
 
-        self.graph = Graph(GRAPH_ID, self.conn)
+        self.graph = Graph(self.conn, GRAPH_ID)
         pool = Pool(nodes=CLIENT_COUNT)
 
         Rq = "UNWIND range(0, 10000) AS x WITH x WHERE x = 9999 RETURN 'R', timestamp()"
@@ -332,4 +345,30 @@ class testConcurrentQueryFlow(FlowTestsBase):
 
         # delete the key
         self.conn.delete(GRAPH_ID)
+
+        pool.clear()
+
+    def test_11_concurrent_resize_zero_matrix(self):
+        if "to_thread" not in dir(asyncio):
+            # no need to check
+            return
+
+        self.graph = Graph(self.conn, GRAPH_ID)
+
+        self.graph.query("CREATE (:N)")
+
+        def resize_and_query():
+            g = redis.commands.graph.Graph(self.env.getConnection(), GRAPH_ID)
+
+            for j in range(1, 10):
+                g.query("UNWIND range(1, 10000) AS x CREATE (:M)")
+                for i in range(1, 10):
+                    g.query("MATCH (n:N)-[r:R]->() RETURN r")
+        
+        loop = asyncio.get_event_loop()
+        tasks = []
+        for i in range(1, 10):
+            tasks.append(loop.create_task(asyncio.to_thread(resize_and_query)))
+
+        loop.run_until_complete(asyncio.wait(tasks))
 

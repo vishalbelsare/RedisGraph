@@ -1,7 +1,7 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "op_project.h"
@@ -13,6 +13,7 @@
 
 /* Forward declarations. */
 static Record ProjectConsume(OpBase *opBase);
+static OpResult ProjectReset(OpBase *opBase);
 static OpBase *ProjectClone(const ExecutionPlan *plan, const OpBase *opBase);
 static void ProjectFree(OpBase *opBase);
 
@@ -27,7 +28,7 @@ OpBase *NewProjectOp(const ExecutionPlan *plan, AR_ExpNode **exps) {
 
 	// Set our Op operations
 	OpBase_Init((OpBase *)op, OPType_PROJECT, "Project", NULL, ProjectConsume,
-				NULL, NULL, ProjectClone, ProjectFree, false, plan);
+				ProjectReset, NULL, ProjectClone, ProjectFree, false, plan);
 
 	for(uint i = 0; i < op->exp_count; i ++) {
 		// The projected record will associate values with their resolved name
@@ -60,17 +61,27 @@ static Record ProjectConsume(OpBase *opBase) {
 		AR_ExpNode *exp = op->exps[i];
 		SIValue v = AR_EXP_Evaluate(exp, op->r);
 		int rec_idx = op->record_offsets[i];
-		/* Persisting a value is only necessary here if 'v' refers to a scalar held in Record 'r'.
-		 * Graph entities don't need to be persisted here as Record_Add will copy them internally.
-		 * The RETURN projection here requires persistence:
-		 * MATCH (a) WITH toUpper(a.name) AS e RETURN e
-		 * TODO This is a rare case; the logic of when to persist can be improved.  */
+
+		// persisting a value is only necessary when
+		// 'v' refers to a scalar held in Record 'r'
+		// graph entities don't need to be persisted here as
+		// Record_Add will copy them internally
+		//
+		// the RETURN projection here requires persistence:
+		// MATCH (a) WITH toUpper(a.name) AS e RETURN e
+		// TODO: this is a rare case;
+		// the logic of when to persist can be improved
+
 		if(!(v.type & SI_GRAPHENTITY)) SIValue_Persist(&v);
 		Record_Add(op->projection, rec_idx, v);
-		/* If the value was a graph entity with its own allocation, as with a query like:
-		 * MATCH p = (src) RETURN nodes(p)[0]
-		 * Ensure that the allocation is freed here. */
-		if((v.type & SI_GRAPHENTITY)) SIValue_Free(v);
+
+		// if the value was a graph entity with its own allocation
+		// as with a query like:
+		// MATCH p = (src) RETURN nodes(p)[0]
+		// ensure that the allocation is freed here
+		if((v.type & SI_GRAPHENTITY)) {
+			SIValue_Free(v);
+		}
 	}
 
 	OpBase_DeleteRecord(op->r);
@@ -82,12 +93,38 @@ static Record ProjectConsume(OpBase *opBase) {
 	return projection;
 }
 
+static OpResult ProjectReset(OpBase *opBase) {
+	OpProject *op = (OpProject *)opBase;
+	op->singleResponse = false;
+	return OP_OK;
+}
+
 static OpBase *ProjectClone(const ExecutionPlan *plan, const OpBase *opBase) {
 	ASSERT(opBase->type == OPType_PROJECT);
 	OpProject *op = (OpProject *)opBase;
 	AR_ExpNode **exps;
 	array_clone_with_cb(exps, op->exps, AR_EXP_Clone);
 	return NewProjectOp(plan, exps);
+}
+
+void ProjectBindToPlan
+(
+	OpBase *opBase,            // op to bind
+	const ExecutionPlan *plan  // plan to bind the op to
+) {
+	OpProject *op = (OpProject *)opBase;
+	opBase->plan = plan;
+
+	// introduce the projected aliases to the plan record-mapping, and reset the
+	// record offsets to the correct indexes
+	array_clear(op->record_offsets);
+
+	for(uint i = 0; i < op->exp_count; i ++) {
+		// The projected record will associate values with their resolved name
+		// to ensure that space is allocated for each entry.
+		int record_idx = OpBase_Modifies((OpBase *)op, op->exps[i]->resolved_name);
+		array_append(op->record_offsets, record_idx);
+	}
 }
 
 static void ProjectFree(OpBase *ctx) {
@@ -114,4 +151,3 @@ static void ProjectFree(OpBase *ctx) {
 		op->projection = NULL;
 	}
 }
-

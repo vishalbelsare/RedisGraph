@@ -1,21 +1,33 @@
-#include "execution_plan_construct.h"
-#include "execution_plan_modify.h"
-#include "../execution_plan.h"
+/*
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "../ops/ops.h"
 #include "../../query_ctx.h"
+#include "../execution_plan.h"
+#include "../../errors/errors.h"
+#include "execution_plan_util.h"
+#include "execution_plan_modify.h"
+#include "execution_plan_construct.h"
 #include "../../util/rax_extensions.h"
 #include "../optimizations/optimizations.h"
 #include "../../ast/ast_build_filter_tree.h"
 
-static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg,
-											 AST *ast) {
+static void _ExecutionPlan_ProcessQueryGraph
+(
+	ExecutionPlan *plan,
+	QueryGraph *qg,
+	AST *ast
+) {
 	GraphContext *gc = QueryCtx_GetGraphCtx();
 
 	// build the full FilterTree for this AST
 	// so that we can order traversals properly
 	FT_FilterNode *ft = AST_BuildFilterTree(ast);
 	QueryGraph **connectedComponents = QueryGraph_ConnectedComponents(qg);
-	plan->connected_components = connectedComponents;
+
 	// if we have already constructed any ops
 	// the plan's record map contains all variables bound at this time
 	uint connectedComponentsCount = array_len(connectedComponents);
@@ -38,10 +50,12 @@ static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg
 		OpBase *tail = NULL;
 
 		if(edge_count == 0) {
- 			// if there are no edges in the component, we only need a node scan
- 			QGNode *n = cc->nodes[0];
+			// if there are no edges in the component, we only need a node scan
+			// if no labels are introduced, and the var is bound, don't build
+			// a traversal
+			QGNode *n = cc->nodes[0];
 			if(raxFind(bound_vars, (unsigned char *)n->alias, strlen(n->alias))
-				!= raxNotFound) {
+					!= raxNotFound && QGNode_LabelCount(n) == 0) {
 				continue;
 			}
 		}
@@ -53,11 +67,13 @@ static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg
 		orderExpressions(qg, exps, &expCount, ft, bound_vars);
 
 		// Create the SCAN operation that will be the tail of the traversal chain.
-		QGNode *src = QueryGraph_GetNodeByAlias(qg, AlgebraicExpression_Src(exps[0]));
+		QGNode *src = QueryGraph_GetNodeByAlias(qg,
+			AlgebraicExpression_Src(exps[0]));
 
 		uint label_count = QGNode_LabelCount(src);
 		if(label_count > 0) {
-			AlgebraicExpression *ae_src = AlgebraicExpression_RemoveSource(&exps[0]);
+			AlgebraicExpression *ae_src =
+				AlgebraicExpression_RemoveSource(&exps[0]);
 			ASSERT(AlgebraicExpression_DiagonalOperand(ae_src, 0));
 
 			const char *label = AlgebraicExpression_Label(ae_src);
@@ -70,7 +86,8 @@ static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg
 			if(s != NULL) label_id = Schema_GetID(s);
 
 			// resolve source node by performing label scan
-			NodeScanCtx ctx = NODE_CTX_NEW(alias, label, label_id);
+			NodeScanCtx *ctx = NodeScanCtx_New((char *)alias, (char *)label,
+				label_id, src);
 			root = tail = NewNodeByLabelScanOp(plan, ctx);
 
 			// first operand has been converted into a label scan op
@@ -92,9 +109,31 @@ static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg
 			if(AlgebraicExpression_OperandCount(exp) == 0) continue;
 
 			QGEdge *edge = NULL;
-			if(AlgebraicExpression_Edge(exp)) edge = QueryGraph_GetEdgeByAlias(qg,
-																				   AlgebraicExpression_Edge(exp));
-			if(edge && QGEdge_VariableLength(edge)) {
+			if(AlgebraicExpression_Edge(exp)) {
+				edge =
+					QueryGraph_GetEdgeByAlias(qg, AlgebraicExpression_Edge(exp));
+			}
+
+			if(edge && (QGEdge_VariableLength(edge) || !QGEdge_SingleHop(edge))) {
+				if(QGEdge_IsShortestPath(edge)) {
+					// edge is part of a shortest-path
+					// MATCH allShortestPaths((a)-[*..]->(b))
+					// validate both edge ends are bounded
+					const char *src_alias  = QGNode_Alias(QGEdge_Src(edge));
+					const char *dest_alias = QGNode_Alias(QGEdge_Dest(edge));
+					bool src_bounded =
+						raxFind(bound_vars, (unsigned char *)src_alias,
+								strlen(src_alias)) != raxNotFound;
+					bool dest_bounded =
+						raxFind(bound_vars, (unsigned char *)dest_alias,
+								strlen(dest_alias)) != raxNotFound;
+
+					// TODO: would be great if we can perform this validation
+					// at AST validation time
+					if(!src_bounded || !dest_bounded) {
+						ErrorCtx_SetError(EMSG_ALLSHORTESTPATH_SRC_DST_RESLOVED);
+					}
+				}
 				root = NewCondVarLenTraverseOp(plan, gc->g, exp);
 			} else {
 				root = NewCondTraverseOp(plan, gc->g, exp);
@@ -116,6 +155,11 @@ static void _ExecutionPlan_ProcessQueryGraph(ExecutionPlan *plan, QueryGraph *qg
 			ExecutionPlan_UpdateRoot(plan, root);
 		}
 	}
+
+	for(uint i = 0; i < connectedComponentsCount; i++) {
+		QueryGraph_Free(connectedComponents[i]);
+	}
+	array_free(connectedComponents);
 	FilterTree_Free(ft);
 }
 
@@ -130,7 +174,7 @@ static void _buildOptionalMatchOps(ExecutionPlan *plan, AST *ast, const cypher_a
 		bound_vars = raxNew();
 		// Rather than cloning the record map, collect the bound variables along with their
 		// parser-generated constant strings.
-		ExecutionPlan_BoundVariables(plan->root, bound_vars);
+		ExecutionPlan_BoundVariables(plan->root, bound_vars, plan);
 		// Collect the variable names from bound_vars to populate the Argument op we will build.
 		arguments = (const char **)raxValues(bound_vars);
 		raxFree(bound_vars);
@@ -161,44 +205,21 @@ void buildMatchOpTree(ExecutionPlan *plan, AST *ast, const cypher_astnode_t *cla
 		return;
 	}
 
-	// only add at most one set of traversals per plan
-	// TODO Revisit and improve this logic
-	if(plan->root && ExecutionPlan_LocateOpMatchingType(plan->root, SCAN_OPS, SCAN_OP_COUNT)) {
-		return;
-	}
-
-	//--------------------------------------------------------------------------
-	// Extract mandatory patterns
-	//--------------------------------------------------------------------------
-
-	uint mandatory_match_count = 0; // Number of mandatory patterns
-	const cypher_astnode_t **match_clauses = AST_GetClauses(ast, CYPHER_AST_MATCH);
-	uint match_clause_count = array_len(match_clauses);
-	const cypher_astnode_t *patterns[match_clause_count];
-	const cypher_astnode_t *mandatory_matches[match_clause_count];
-
-	for(uint i = 0; i < match_clause_count; i++) {
-		const cypher_astnode_t *match_clause = match_clauses[i];
-		if(cypher_ast_match_is_optional(match_clause)) continue;
-		mandatory_matches[mandatory_match_count] = match_clause;
-		patterns[mandatory_match_count] = cypher_ast_match_get_pattern(match_clause);
-		mandatory_match_count++;
-	}
+	const cypher_astnode_t *pattern = cypher_ast_match_get_pattern(clause);
 
 	// collect the QueryGraph entities referenced in the clauses being converted
-	QueryGraph *qg = plan->query_graph;
-	QueryGraph *sub_qg = QueryGraph_ExtractPatterns(qg, patterns,
-			mandatory_match_count);
+	QueryGraph *sub_qg =
+		QueryGraph_ExtractPatterns(plan->query_graph, &pattern, 1);
 
 	_ExecutionPlan_ProcessQueryGraph(plan, sub_qg, ast);
+	if(ErrorCtx_EncounteredError()) goto cleanup;
 
 	// Build the FilterTree to model any WHERE predicates on these clauses and place ops appropriately.
-	FT_FilterNode *sub_ft = AST_BuildFilterTreeFromClauses(ast, mandatory_matches,
-														   mandatory_match_count);
+	FT_FilterNode *sub_ft = AST_BuildFilterTreeFromClauses(ast,
+		&clause, 1);
 	ExecutionPlan_PlaceFilterOps(plan, plan->root, NULL, sub_ft);
 
 	// Clean up
+cleanup:
 	QueryGraph_Free(sub_qg);
-	array_free(match_clauses);
 }
-

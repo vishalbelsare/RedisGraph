@@ -2,7 +2,7 @@
 // GB_emult_02: C = A.*B where A is sparse/hyper and B is bitmap/full
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -71,7 +71,8 @@
 #include "GB_emult.h"
 #include "GB_binop.h"
 #include "GB_unused.h"
-#ifndef GBCOMPACT
+#include "GB_stringify.h"
+#ifndef GBCUDA_DEV
 #include "GB_binop__include.h"
 #endif
 
@@ -84,7 +85,7 @@
 #define GB_FREE_ALL                         \
 {                                           \
     GB_FREE_WORKSPACE ;                     \
-    GB_phbix_free (C) ;                   \
+    GB_phybix_free (C) ;                    \
 }
 
 GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
@@ -108,7 +109,7 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
     //--------------------------------------------------------------------------
 
     GrB_Info info ;
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
 
     ASSERT_MATRIX_OK_OR_NULL (M, "M for emult_02", GB0) ;
     ASSERT_MATRIX_OK (A, "A for emult_02", GB0) ;
@@ -173,12 +174,8 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
         }
     }
 
-    if (flipxy)
-    {
-        bool handled ;
-        op = GB_flip_op (op, &handled) ;
-        if (handled) flipxy = false ;
-    }
+    // handle the flipxy
+    op = GB_flip_binop (op, true, &flipxy) ;
     ASSERT_BINARYOP_OK (op, "final op for emult_02", GB0) ;
 
     //--------------------------------------------------------------------------
@@ -219,11 +216,16 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
     GB_void cscalar [GB_VLA(csize)] ;
     bool C_iso = GB_iso_emult (cscalar, ctype, A, B, op) ;
 
+    #ifdef GB_DEBUGIFY_DEFN
+    GB_debugify_ewise (C_iso, C_sparsity, ctype, M,
+        Mask_struct, Mask_comp, op, flipxy, A, B) ;
+    #endif
+
     //--------------------------------------------------------------------------
     // allocate C->p and C->h
     //--------------------------------------------------------------------------
 
-    GB_OK (GB_new (&C, true, // sparse or hyper (same as A), static header
+    GB_OK (GB_new (&C, // sparse or hyper (same as A), existing header
         ctype, vlen, vdim, GB_Ap_calloc, C_is_csc,
         C_sparsity, A->hyper_switch, nvec, Context)) ;
     int64_t *restrict Cp = C->p ;
@@ -401,6 +403,7 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
         GB_memcpy (C->i, Ai, cnz * sizeof (int64_t), A_nthreads) ;
     }
 
+    C->nvals = cnz ;
     C->jumbled = A->jumbled ;
     C->magic = GB_MAGIC ;
 
@@ -462,7 +465,7 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
     else
     {
 
-        #ifndef GBCOMPACT
+        #ifndef GBCUDA_DEV
 
             //------------------------------------------------------------------
             // define the worker for the switch factory
@@ -482,6 +485,10 @@ GrB_Info GB_emult_02        // C=A.*B when A is sparse/hyper, B bitmap/full
             //------------------------------------------------------------------
             // launch the switch factory
             //------------------------------------------------------------------
+
+            // flipxy is not passed to GB_binop_builtin, since the unflippable
+            // binary ops (atan2, pow, etc) handle the flip themselves.
+            // See for example Generated2/GB_binop__atan2_fp32.c.
 
             GB_Type_code xcode, ycode, zcode ;
             if (!op_is_positional &&

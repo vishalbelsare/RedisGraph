@@ -2,7 +2,7 @@
 // GB_mx_mxArray_to_Matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -253,7 +253,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
     {
 
         // create the GraphBLAS matrix
-        info = GB_new (&A, false, // sparse or full, new mx header
+        info = GB_new (&A, // sparse or full, new header
             atype_out, (GrB_Index) nrows, (GrB_Index) ncols,
             GB_Ap_calloc, is_csc, sparsity, GxB_HYPER_DEFAULT, 0, Context) ;
         if (info != GrB_SUCCESS)
@@ -276,6 +276,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
         {
             memcpy (A->p, Mp, (ncols+1) * sizeof (int64_t)) ;
             memcpy (A->i, Mi, anz * sizeof (int64_t)) ;
+            A->nvals = A->p [ncols] ;
         }
         A->magic = GB_MAGIC ;
 
@@ -287,7 +288,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
         // built-in matrix and must not be modified.
 
         // [ create the GraphBLAS matrix, do not allocate A->p
-        info = GB_new (&A, false, // sparse or full, new mx header
+        info = GB_new (&A, // sparse or full, new header
             atype_out, (GrB_Index) nrows, (GrB_Index) ncols,
             GB_Ap_null, is_csc, sparsity, GxB_HYPER_DEFAULT, 0, Context) ;
         if (info != GrB_SUCCESS)
@@ -305,6 +306,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
             A->i_size = GB_IMAX (anz, 1) * sizeof (int64_t) ;
             A->p_shallow = true ;
             A->i_shallow = true ;
+            A->nvals = A->p [ncols] ;
         }
         else
         {
@@ -490,7 +492,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
         {
             bool burble = GB_Global_burble_get ( ) ;
             if (burble) printf (" [ GB_mx_mxArray_to_Matrix ") ;
-            GB_convert_hyper_to_sparse (A, Context) ;
+            GB_convert_hyper_to_sparse (A, true, Context) ;
             if (burble) printf ("]\n") ;
         }
         ASSERT (!A->is_csc) ;
@@ -542,11 +544,7 @@ GrB_Matrix GB_mx_mxArray_to_Matrix     // returns GraphBLAS version of A
     // return the GraphBLAS matrix
     //--------------------------------------------------------------------------
 
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    info = GrB_Matrix_wait (&A) ;
-    #else
     info = GrB_Matrix_wait (A, GrB_MATERIALIZE) ;
-    #endif
     if (info != GrB_SUCCESS)
     {
         FREE_ALL ;

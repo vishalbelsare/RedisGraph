@@ -1,12 +1,11 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "RG.h"
 #include "../../util/arr.h"
-#include "../../util/strcmp.h"
 #include "traverse_order_utils.h"
 
 static bool _AlgebraicExpression_IsVarLen
@@ -53,7 +52,7 @@ int TraverseOrder_LabelsScore
 
 	// TODO: re-enable, see https://github.com/RedisGraph/RedisGraph/issues/1742
 	// consider 'dest' only if different than 'src'
-	//if(RG_STRCMP(src, dest) != 0) {
+	//if(strcmp(src, dest) != 0) {
 	//  score += QGNode_LabelCount(dest_node);
 	//}
 
@@ -102,7 +101,7 @@ int TraverseOrder_FilterExistenceScore
 		}
 
 		// consider 'dest' only if different than 'src'
-		if(RG_STRCMP(src, dest) != 0) {
+		if(strcmp(src, dest) != 0) {
 			frequency = raxFind(filtered_entities, (unsigned char *)dest, strlen(dest));
 			if(frequency != raxNotFound) {
 				score += 2;
@@ -144,7 +143,7 @@ int TraverseOrder_BoundVariableScore
 						strlen(src)) != raxNotFound;
 
 	// consider 'dest' only if different than 'src'
-	if(RG_STRCMP(src, dest) != 0) {
+	if(strcmp(src, dest) != 0) {
 		dest_bound = raxFind(bound_vars, (unsigned char *)dest,
 							 strlen(dest)) != raxNotFound;
 	}
@@ -170,9 +169,8 @@ void FilterTree_CollectIndependentEntities
 
 	// clone input filter-tree as we're about to modify it
 	// breaking it down to sub-trees
-	FT_FilterNode  *tree           =  FilterTree_Clone(root);
-	FT_FilterNode  **sub_trees     =  FilterTree_SubTrees(tree);
-	uint           sub_tree_count  =  array_len(sub_trees);
+	const FT_FilterNode **sub_trees = FilterTree_SubTrees(root);
+	uint sub_tree_count = array_len(sub_trees);
 
 	// for each sub tree of 'root'
 	for(uint i = 0; i < sub_tree_count; i++) {
@@ -181,7 +179,7 @@ void FilterTree_CollectIndependentEntities
 		// 'e' independent
 		uint n = 0;
 		raxIterator it;
-		FT_FilterNode *t = sub_trees[i];
+		const FT_FilterNode *t = sub_trees[i];
 		rax *modified = FilterTree_CollectModified(t);
 
 		n = raxSize(modified);
@@ -200,7 +198,6 @@ void FilterTree_CollectIndependentEntities
 		}
 
 		raxFree(modified);
-		FilterTree_Free(t);
 	}
 
 	array_free(sub_trees);

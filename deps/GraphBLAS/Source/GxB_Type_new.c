@@ -2,7 +2,7 @@
 // GxB_Type_new: create a new user-defined type
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -22,7 +22,13 @@
 
 // This is not used for built-in types.  Those are created statically.
 
-// The type_name and type_defn are optional and may by NULL.
+// Example:
+
+//  GxB_Type_new (&MyQtype, sizeof (myquaternion), "myquaternion",
+//      "typedef struct { float x [4][4] ; int color ; } myquaternion ;") ;
+
+// The type_name and type_defn are optional and may by NULL, but they are
+// required for the JIT.
 
 #include "GB.h"
 
@@ -62,21 +68,20 @@ GrB_Info GxB_Type_new
 
     // allocate the type
     size_t header_size ;
-    (*type) = GB_MALLOC (1, struct GB_Type_opaque, &header_size) ;
-    if (*type == NULL)
+    GrB_Type t = GB_MALLOC (1, struct GB_Type_opaque, &header_size) ;
+    if (t == NULL)
     { 
         // out of memory
         return (GrB_OUT_OF_MEMORY) ;
     }
 
     // initialize the type
-    GrB_Type t = *type ;
-    t->magic = GB_MAGIC ;
     t->header_size = header_size ;
     t->size = GB_IMAX (sizeof_ctype, 1) ;
     t->code = GB_UDT_code ;         // user-defined type
     memset (t->name, 0, GxB_MAX_NAME_LEN) ;   // no name yet
-    t->defn = NULL ;                // type_defn currently unused
+    t->defn = NULL ;                // no definition yet
+    t->defn_size = 0 ;
 
     //--------------------------------------------------------------------------
     // get the name: as a type_name or "sizeof (type_name)"
@@ -117,23 +122,41 @@ GrB_Info GxB_Type_new
     else
     { 
         // no type name, so give it a generic name, with the typesize only
-        snprintf (t->name, GxB_MAX_NAME_LEN-1, "user_type_of_size_%lu",
-            sizeof_ctype) ;
+        snprintf (t->name, GxB_MAX_NAME_LEN-1, "user_type_of_size_" GBu,
+            (uint64_t) sizeof_ctype) ;
     }
 
     // ensure t->name is null-terminated
     t->name [GxB_MAX_NAME_LEN-1] = '\0' ;
 
     //--------------------------------------------------------------------------
-    // get the typedef (TODO)
+    // get the typedef, if present
     //--------------------------------------------------------------------------
 
-    // type_defn is currently unused
+    if (type_defn != NULL)
+    { 
+        // determine the string length of the typedef
+        size_t len = strlen (type_defn) ;
+
+        // allocate space for the typedef
+        t->defn = GB_MALLOC (len+1, char, &(t->defn_size)) ;
+        if (t->defn == NULL)
+        { 
+            // out of memory
+            GB_FREE (&t, header_size) ;
+            return (GrB_OUT_OF_MEMORY) ;
+        }
+
+        // copy the typedef into the new type
+        memcpy (t->defn, type_defn, len+1) ;
+    }
 
     //--------------------------------------------------------------------------
     // return result
     //--------------------------------------------------------------------------
 
+    t->magic = GB_MAGIC ;
+    (*type) = t ;
     ASSERT_TYPE_OK (t, "new user-defined type", GB0) ;
     return (GrB_SUCCESS) ;
 }

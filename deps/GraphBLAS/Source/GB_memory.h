@@ -2,7 +2,7 @@
 // GB_memory.h: memory allocation
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -14,15 +14,15 @@
 // memory management
 //------------------------------------------------------------------------------
 
-GrB_Info GB_memoryUsage     // count # allocated blocks and their sizes
+void GB_memoryUsage         // count # allocated blocks and their sizes
 (
     int64_t *nallocs,       // # of allocated memory blocks
     size_t *mem_deep,       // # of bytes in blocks owned by this matrix
     size_t *mem_shallow,    // # of bytes in blocks owned by another matrix
-    const GrB_Matrix A      // matrix to query
+    const GrB_Matrix A,     // matrix to query
+    bool count_hyper_hash   // if true, include A->Y
 ) ;
 
-GB_PUBLIC
 void *GB_calloc_memory      // pointer to allocated block of memory
 (
     size_t nitems,          // number of items to allocate
@@ -32,7 +32,6 @@ void *GB_calloc_memory      // pointer to allocated block of memory
     GB_Context Context
 ) ;
 
-GB_PUBLIC
 void *GB_malloc_memory      // pointer to allocated block of memory
 (
     size_t nitems,          // number of items to allocate
@@ -41,7 +40,6 @@ void *GB_malloc_memory      // pointer to allocated block of memory
     size_t *size_allocated  // # of bytes actually allocated
 ) ;
 
-GB_PUBLIC
 void *GB_realloc_memory     // pointer to reallocated block of memory, or
                             // to original block if the realloc failed.
 (
@@ -55,7 +53,6 @@ void *GB_realloc_memory     // pointer to reallocated block of memory, or
     GB_Context Context
 ) ;
 
-GB_PUBLIC
 void GB_free_memory         // free memory, bypassing the free_pool
 (
     // input/output
@@ -64,7 +61,6 @@ void GB_free_memory         // free memory, bypassing the free_pool
     size_t size_allocated   // # of bytes actually allocated
 ) ;
 
-GB_PUBLIC
 void GB_dealloc_memory      // free memory, return to free_pool or free it
 (
     // input/output
@@ -73,18 +69,38 @@ void GB_dealloc_memory      // free memory, return to free_pool or free it
     size_t size_allocated   // # of bytes actually allocated
 ) ;
 
-GB_PUBLIC
 void GB_free_pool_finalize (void) ;
 
 void *GB_xalloc_memory      // return the newly-allocated space
 (
     // input
+    bool use_calloc,        // if true, use calloc
     bool iso,               // if true, only allocate a single entry
     int64_t n,              // # of entries to allocate if non iso
     size_t type_size,       // size of each entry
     // output
     size_t *size,           // resulting size
     GB_Context Context
+) ;
+
+//------------------------------------------------------------------------------
+// parallel memcpy and memset
+//------------------------------------------------------------------------------
+
+void GB_memcpy                  // parallel memcpy
+(
+    void *dest,                 // destination
+    const void *src,            // source
+    size_t n,                   // # of bytes to copy
+    int nthreads                // # of threads to use
+) ;
+
+void GB_memset                  // parallel memset
+(
+    void *dest,                 // destination
+    const int c,                // value to to set
+    size_t n,                   // # of bytes to set
+    int nthreads                // # of threads to use
 ) ;
 
 //------------------------------------------------------------------------------
@@ -100,7 +116,7 @@ void *GB_xalloc_memory      // return the newly-allocated space
             printf ("dealloc (%s, line %d): %p size %lu\n", \
                 __FILE__, __LINE__, (*p), s) ; \
         } \
-        GB_dealloc_memory (p, s) ; \
+        GB_dealloc_memory ((void **) p, s) ; \
     }
 
     #define GB_CALLOC(n,type,s) \
@@ -119,8 +135,8 @@ void *GB_xalloc_memory      // return the newly-allocated space
         ; printf ("realloc (%s, line %d): size %lu\n", \
             __FILE__, __LINE__, *(s)) ; \
 
-    #define GB_XALLOC(iso,n,type_size,s) \
-        GB_xalloc_memory (iso, n, type_size, s, Context) ; \
+    #define GB_XALLOC(use_calloc,iso,n,type_size,s) \
+        GB_xalloc_memory (use_calloc, iso, n, type_size, s, Context) ; \
         ; printf ("xalloc (%s, line %d): size %lu\n", \
             __FILE__, __LINE__, *(s)) ; \
 
@@ -139,8 +155,8 @@ void *GB_xalloc_memory      // return the newly-allocated space
         p = (type *) GB_realloc_memory (nnew, sizeof (type), \
             (void *) p, s, ok, Context)
 
-    #define GB_XALLOC(iso,n,type_size,s) \
-        GB_xalloc_memory (iso, n, type_size, s, Context)
+    #define GB_XALLOC(use_calloc,iso,n,type_size,s) \
+        GB_xalloc_memory (use_calloc, iso, n, type_size, s, Context)
 
 #endif
 

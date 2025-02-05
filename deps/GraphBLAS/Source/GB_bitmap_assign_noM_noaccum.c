@@ -2,7 +2,7 @@
 // GB_bitmap_assign_noM_noaccum:  assign to C bitmap
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -38,7 +38,6 @@
 
 #define GB_FREE_ALL ;
 
-GB_PUBLIC
 GrB_Info GB_bitmap_assign_noM_noaccum
 (
     // input/output:

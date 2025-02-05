@@ -2,7 +2,7 @@
 // GB_mex_serialize: copy a matrix, using serialize/deserialize
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -25,6 +25,8 @@
 // GxB_COMPRESSION_LZ4HC 2001  // LZ4HC:1
 // ...
 // GxB_COMPRESSION_LZ4HC 2009  // LZ4HC:9
+
+// GxB_COMPRESSION_ZSTD  3000  // ZSTD with default level 3
 
 #define USAGE "C = GB_mex_serialize (A, method)"
 
@@ -128,9 +130,9 @@ void mexFunction
     // check the type
     char type_name1 [GxB_MAX_NAME_LEN], type_name2 [GxB_MAX_NAME_LEN],
          type_name3 [GxB_MAX_NAME_LEN] ;
-    GxB_Matrix_type_name (&type_name1, C) ;
-    GxB_Matrix_type_name (&type_name2, A) ;
-    GxB_deserialize_type_name (&type_name3, blob, blob_size) ;
+    GxB_Matrix_type_name (type_name1, C) ;
+    GxB_Matrix_type_name (type_name2, A) ;
+    GxB_deserialize_type_name (type_name3, blob, blob_size) ;
     CHECK (MATCH (type_name1, type_name2)) ;
     CHECK (MATCH (type_name1, type_name3)) ;
 

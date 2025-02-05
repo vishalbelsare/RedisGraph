@@ -1,11 +1,9 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-from base import FlowTestsBase
+from common import *
+from index_utils import *
 
 people = ["Roi", "Alon", "Ailon", "Boaz", "Tal", "Omri", "Ori"]
 redis_graph = None
+
 
 class testEdgeByIndexScanFlow(FlowTestsBase):
     def __init__(self):
@@ -14,7 +12,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
     def setUp(self):
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph("social", redis_con)
+        redis_graph = Graph(redis_con, "social")
         self.populate_graph(redis_graph)
         self.build_indices()
 
@@ -49,7 +47,8 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         global redis_graph
         redis_graph.query("CREATE INDEX ON :person(age)")
         redis_graph.query("CREATE INDEX FOR ()-[f:friend]-() ON (f.created_at)")
-        redis_graph.query("CREATE INDEX FOR ()-[f:knows]-() ON (f.created_at)")
+        redis_graph.query("CREATE INDEX FOR ()-[k:knows]-() ON (k.created_at)")
+        wait_for_indices_to_sync(redis_graph)
 
     # Validate that Cartesian products using index and label scans succeed
     def test01_cartesian_product_mixed_scans(self):
@@ -86,15 +85,18 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
 
     # Validate that the appropriate bounds are respected when a Cartesian product uses the same index in two streams
     def test03_cartesian_product_reused_index(self):
-        redis_graph.query("CREATE INDEX FOR ()-[f:friend]-() ON (f.updated_at)")
-        query = "MATCH ()-[a:friend]->(), ()-[b:friend]->() WHERE a.created_at >= 80 AND b.updated_at >= 120 RETURN a.created_at, b.updated_at"
+        create_edge_exact_match_index(redis_graph, 'friend', 'updated_at', sync=True)
+        query = """MATCH ()-[a:friend]->(), ()-[b:friend]->()
+                   WHERE a.created_at >= 80 AND b.updated_at >= 120
+                   RETURN a.created_at, b.updated_at
+                   ORDER BY a.created_at, b.updated_at"""
         plan = redis_graph.execution_plan(query)
         # The two streams should both use index scans
         self.env.assertEquals(plan.count('Edge By Index Scan'), 2)
         self.env.assertNotIn('Conditional Traverse', plan)
 
 
-        expected_result = [[81, 120], [83, 120], [81, 123], [83, 123]]
+        expected_result = [[81, 120], [81, 123], [83, 120], [83, 123]]
         result = redis_graph.query(query)
 
         self.env.assertEquals(result.result_set, expected_result)
@@ -156,20 +158,22 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         result = redis_graph.query(query)
         self.env.assertEquals(result.result_set, expected_result)
 
-    def test07_index_scan_and_id(self):
-        query = """MATCH (n)-[f:friend]->() WHERE id(f)>=10 AND f.created_at<15 RETURN n.name ORDER BY n.name"""
+    def test05_index_scan_and_id(self):
+        query = """MATCH (n)-[f:friend]->()
+                   WHERE id(f)>=10 AND f.created_at<15
+                   RETURN n.name
+                   ORDER BY n.name"""
         plan = redis_graph.execution_plan(query)
         query_result = redis_graph.query(query)
-        self.env.assertIn('Edge By Index Scan', plan)
         self.env.assertIn('Filter', plan)
-        query_result = redis_graph.query(query)
+        self.env.assertIn('Edge By Index Scan', plan)
 
         self.env.assertEqual(2, len(query_result.result_set))
         expected_result = [['Alon'], ['Roi']]
         self.env.assertEquals(expected_result, query_result.result_set)
 
     # Validate placement of index scans and filter ops when not all filters can be replaced.
-    def test08_index_scan_multiple_filters(self):
+    def test06_index_scan_multiple_filters(self):
         query = "MATCH (n)-[f:friend]->() WHERE f.created_at = 31 AND NOT EXISTS(f.fakeprop) RETURN n.name"
         plan = redis_graph.execution_plan(query)
         self.env.assertIn('Edge By Index Scan', plan)
@@ -180,7 +184,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = ["Ailon"]
         self.env.assertEquals(query_result.result_set[0], expected_result)
 
-    def test09_index_scan_with_params(self):
+    def test07_index_scan_with_params(self):
         query = "MATCH (n)-[f:friend]->() WHERE f.created_at = $time RETURN n.name"
         params = {'time': 31}
         plan = redis_graph.execution_plan(query, params=params)
@@ -189,7 +193,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = ["Ailon"]
         self.env.assertEquals(query_result.result_set[0], expected_result)
 
-    def test10_index_scan_with_param_array(self):
+    def test08_index_scan_with_param_array(self):
         query = "MATCH (n)-[f:friend]->() WHERE f.created_at in $times RETURN n.name"
         params = {'times': [31]}
         plan = redis_graph.execution_plan(query, params=params)
@@ -198,7 +202,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = ["Ailon"]
         self.env.assertEquals(query_result.result_set[0], expected_result)
 
-    def test11_single_index_multiple_scans(self):
+    def test09_single_index_multiple_scans(self):
         query = "MATCH (p1:person {name: 'Roi'}), (p2:person {name: 'Alon'}) MERGE (p1)-[:friend {created_at: 100}]->(p2) MERGE (p1)-[:friend {created_at: 101}]->(p2)"
         plan = redis_graph.execution_plan(query)
         # Two index scans should be performed.
@@ -208,7 +212,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         # Two new nodes should be created.
         self.env.assertEquals(query_result.relationships_created, 2)
 
-    def test16_runtime_index_utilization(self):
+    def test10_runtime_index_utilization(self):
         # find all person nodes with age in the range 33-37
         # current age (x) should be resolved at runtime
         # index query should be constructed for each age value
@@ -287,7 +291,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = [["Ori"]]
         self.env.assertEquals(query_result.result_set, expected_result)
 
-    def test18_index_scan_and_label_filter(self):
+    def test11_index_scan_and_label_filter(self):
         query = "MATCH (n)-[f:friend]->(m) WHERE f.created_at = 1 RETURN n.name"
         plan = redis_graph.execution_plan(query)
         self.env.assertIn('Edge By Index Scan', plan)
@@ -376,7 +380,7 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = ["Alon"]
         self.env.assertEquals(query_result.result_set[0], expected_result)
 
-    def test19_index_scan_and_with(self):
+    def test12_index_scan_and_with(self):
         query = "MATCH (n)-[f:friend]->(m) WHERE f.created_at = 1 WITH n RETURN n.name"
         plan = redis_graph.execution_plan(query)
         self.env.assertIn('Edge By Index Scan', plan)
@@ -465,11 +469,11 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         expected_result = ["Alon"]
         self.env.assertEquals(query_result.result_set[0], expected_result)
 
-    def test20_index_scan_numeric_accuracy(self):
-        redis_graph = Graph('large_index_values', self.env.getConnection())
+    def test13_index_scan_numeric_accuracy(self):
+        redis_graph = Graph(self.env.getConnection(), 'large_index_values')
 
-        redis_graph.query("CREATE INDEX FOR ()-[r:R1]-() ON (r.id)")
-        redis_graph.query("CREATE INDEX FOR ()-[r:R2]-() ON (r.id1, r.id2)")
+        create_edge_exact_match_index(redis_graph, 'R1', 'id', sync=True)
+        create_edge_exact_match_index(redis_graph, 'R2', 'id1', 'id2', sync=True)
         redis_graph.query("UNWIND range(1, 5) AS v CREATE ()-[:R1 {id: 990000000262240068 + v}]->()")
         redis_graph.query("UNWIND range(1, 5) AS v CREATE ()-[:R2 {id1: 990000000262240068 + v, id2: 990000000262240068 - v}]->()")
 
@@ -507,3 +511,54 @@ class testEdgeByIndexScanFlow(FlowTestsBase):
         result = redis_graph.query("MATCH ()-[u:R2]->() WHERE u.id1 = 990000000262240069 AND u.id2 = 990000000262240067 RETURN u.id1, u.id2")
         expected_result = [[990000000262240069, 990000000262240067]]
         self.env.assertEquals(result.result_set, expected_result)
+
+    def test14_create_index_multi_edge(self):
+        redis_graph = Graph(self.env.getConnection(), 'index_multi_edge')
+
+        result = redis_graph.query("CREATE (a:A), (b:B)")
+        self.env.assertEquals(result.nodes_created, 2)
+
+        result = redis_graph.query("MATCH (a:A), (b:B) UNWIND range(1, 500) AS x CREATE (a)-[:R{v:x}]->(b)")
+        self.env.assertEquals(result.relationships_created, 500)
+
+        result = create_edge_exact_match_index(redis_graph, 'R', 'v', sync=True)
+        self.env.assertEquals(result.indices_created, 1)
+
+        result = redis_graph.query("MATCH (a:A)-[r:R]->(b:B) WHERE r.v > 0 RETURN count(r)")
+        self.env.assertEquals(result.result_set[0][0], 500)
+
+    def test15_self_referencing_edge(self):
+        # make sure edge connecting node 0 to itself is indexed
+        # (0)->(0)
+        g = Graph(self.env.getConnection(), 'self_ref_edge')
+
+        res = g.query("CREATE (a)-[e:R{v:1}]->(a) RETURN a, e")
+        self.env.assertEquals(res.nodes_created, 1)
+        self.env.assertEquals(res.relationships_created, 1)
+
+        # validate IDs
+        self.env.assertEquals(res.result_set[0][0].id, 0)
+        self.env.assertEquals(res.result_set[0][1].id, 0)
+
+        # create index over R.v
+        create_edge_exact_match_index(g, "R", "v", sync=True)
+
+        # make sure edge can be located via index scan
+        q = "MATCH ()-[e:R{v:1}]->() RETURN e"
+
+        # validate index is utilized
+        plan = g.execution_plan(q)
+        self.env.assertIn("Edge By Index Scan", plan)
+
+        # get result using index scan
+        res = g.query(q)
+        self.env.assertEquals(len(res.result_set), 1)
+        actual = res.result_set
+
+        # get results without index
+        res = g.query("MATCH ()-[e]->() RETURN e")
+        expected = res.result_set
+
+        # make sure the same edge is returned
+        self.env.assertEquals(expected, actual)
+

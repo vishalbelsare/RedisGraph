@@ -2,7 +2,7 @@
 // GB_apply.h: definitions for GB_apply
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -42,7 +42,6 @@ GrB_Info GB_apply_op        // apply a unary op, idxunop, or binop, Cx = op (A)
     GB_Context Context
 ) ;
 
-GB_PUBLIC
 GrB_Info GB_shallow_op      // create shallow matrix and apply operator
 (
     GrB_Matrix C,           // output C, of type op*->ztype, static header

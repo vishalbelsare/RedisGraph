@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 
 Feature: Set1 - Set a Property
 
-  @skip
   Scenario: [1] Set a property
     Given any graph
     And having executed:
@@ -51,7 +50,6 @@ Feature: Set1 - Set a Property
       | +properties | 1 |
       | -properties | 1 |
 
-  @skip
   Scenario: [2] Set a property to an expression
     Given an empty graph
     And having executed:
@@ -171,7 +169,6 @@ Feature: Set1 - Set a Property
       | null |
     And no side effects
 
-  @NegativeTest
   Scenario: [9] Failing when using undefined variable in SET
     Given any graph
     When executing query:
@@ -182,8 +179,6 @@ Feature: Set1 - Set a Property
       """
     Then a SyntaxError should be raised at compile time: UndefinedVariable
 
-  @NegativeTest
-  @skip
   Scenario: [10] Failing when setting a list of maps as a property
     Given any graph
     When executing query:

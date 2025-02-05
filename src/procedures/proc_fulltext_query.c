@@ -1,17 +1,17 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "proc_fulltext_query.h"
 #include "RG.h"
 #include "../value.h"
-#include "../errors.h"
 #include "../util/arr.h"
 #include "../query_ctx.h"
 #include "../index/index.h"
 #include "../util/rmalloc.h"
+#include "../errors/errors.h"
 #include "../graph/graphcontext.h"
 
 //------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ typedef struct {
 	Node n;
 	Graph *g;
 	SIValue *output;
-	Index *idx;
+	Index idx;
 	RSResultsIterator *iter;
 	SIValue *yield_node;     // yield node
 	SIValue *yield_score;    // yield score
@@ -72,19 +72,17 @@ ProcedureResult Proc_FulltextQueryNodeInvoke
 	const char *query = args[1].stringval;
 
 	// get full-text index from schema
-	Schema *s = GraphContext_GetSchema(gc, label, SCHEMA_NODE);
-	if(s == NULL) return PROCEDURE_OK;
-
-	Index *idx = Schema_GetIndex(s, NULL, IDX_FULLTEXT);
+	Index idx = GraphContext_GetIndex(gc, label, NULL, 0, IDX_FULLTEXT,
+			SCHEMA_NODE);
 	if(!idx) return PROCEDURE_ERR; // TODO: this should cause an error to be emitted
 
 	ctx->privateData = rm_malloc(sizeof(QueryNodeContext));
 	QueryNodeContext *pdata = ctx->privateData;
 
-	pdata->g       =  gc->g;
-	pdata->n       =  GE_NEW_NODE();
-	pdata->idx     =  idx;
-	pdata->output  =  array_new(SIValue,  2);
+	pdata->g      = gc->g;
+	pdata->n      = GE_NEW_NODE();
+	pdata->idx    = idx;
+	pdata->output = array_new(SIValue,  2);
 
 	_process_yield(pdata, yield);
 
@@ -96,7 +94,7 @@ ProcedureResult Proc_FulltextQueryNodeInvoke
 		// RediSearch error message is allocated using `rm_strdup`
 		// QueryCtx is expecting to free `error` using `free`
 		// in which case we have no option but to clone error
-		ErrorCtx_SetError("RediSearch: %s", err);
+		ErrorCtx_SetError(EMSG_REDISEARCH, err);
 		rm_free(err);
 		// raise the exception, we expect an exception handler to be set
 		// as procedure invocation is done at runtime
@@ -120,7 +118,8 @@ SIValue *Proc_FulltextQueryNodeStep
 	// try to get a result out of the iterator
 	// NULL is returned if iterator id depleted
 	size_t len = 0;
-	NodeID *id = (NodeID *)RediSearch_ResultsIteratorNext(pdata->iter, pdata->idx->idx, &len);
+	NodeID *id = (NodeID *)RediSearch_ResultsIteratorNext(pdata->iter,
+			Index_RSIndex(pdata->idx), &len);
 
 	// depleted
 	if(!id) return NULL;

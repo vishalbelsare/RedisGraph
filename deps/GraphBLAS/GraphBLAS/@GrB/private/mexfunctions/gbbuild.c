@@ -2,8 +2,8 @@
 // gbbuild: build a GraphBLAS matrix or a built-in sparse matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
@@ -125,7 +125,7 @@ void mexFunction
     { 
         GrB_Index *I2 = (GrB_Index *) mxMalloc (nvals * sizeof (GrB_Index)) ;
         GB_helper8 ((GB_void *) I2, (GB_void *) I, nvals, sizeof (GrB_Index)) ;
-        if (I_allocated) gb_mxfree (&I) ;
+        if (I_allocated) gb_mxfree ((void **) (&I)) ;
         I_allocated = true ;
         I = I2 ;
     }
@@ -134,7 +134,7 @@ void mexFunction
     { 
         GrB_Index *J2 = (GrB_Index *) mxMalloc (nvals * sizeof (GrB_Index)) ;
         GB_helper8 ((GB_void *) J2, (GB_void *) J, nvals, sizeof (GrB_Index)) ;
-        if (J_allocated) gb_mxfree (&J) ;
+        if (J_allocated) gb_mxfree ((void **) (&J)) ;
         J_allocated = true ;
         J = J2 ;
     }
@@ -163,8 +163,7 @@ void mexFunction
     else
     { 
         // m is provided on input
-        CHECK_ERROR (!gb_mxarray_is_scalar (pargin [3]), "m must be a scalar") ;
-        nrows = (GrB_Index) mxGetScalar (pargin [3]) ;
+        nrows = gb_mxget_uint64_scalar (pargin [3], "m") ;
     }
 
     if (nargin < 5)
@@ -184,8 +183,7 @@ void mexFunction
     else
     { 
         // n is provided on input
-        CHECK_ERROR (!gb_mxarray_is_scalar (pargin [4]), "n must be a scalar") ;
-        ncols = (GrB_Index) mxGetScalar (pargin [4]) ;
+        ncols = gb_mxget_uint64_scalar (pargin [4], "n") ;
     }
 
     //--------------------------------------------------------------------------
@@ -456,9 +454,9 @@ void mexFunction
     // free workspace
     //--------------------------------------------------------------------------
 
-    if (X2 != NULL ) gb_mxfree (&X2) ;
-    if (I_allocated) gb_mxfree (&I) ;
-    if (J_allocated) gb_mxfree (&J) ;
+    if (X2 != NULL ) gb_mxfree ((void **) (&X2)) ;
+    if (I_allocated) gb_mxfree ((void **) (&I)) ;
+    if (J_allocated) gb_mxfree ((void **) (&J)) ;
 
     //--------------------------------------------------------------------------
     // export the output matrix A

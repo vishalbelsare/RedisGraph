@@ -2,7 +2,7 @@
 // GrB_Matrix_assign_[SCALAR]: assign a scalar to matrix, via scalar expansion
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -19,6 +19,7 @@
 
 // The actual work is done in GB_assign_scalar.c.
 
+#define GB_FREE_ALL ;
 #include "GB_assign.h"
 #include "GB_ij.h"
 #include "GB_get_mask.h"
@@ -75,9 +76,10 @@ GB_ASSIGN_SCALAR (GrB, void *    , UDT    ,  )
 //  GrB_Matrix_assign (C, M, accum, S, Rows, nRows, Cols, nCols, desc) ;
 //  GrB_Matrix_free (&S) ;
 
-#define GB_FREE_ALL GB_phbix_free (S) ;
+#undef  GB_FREE_ALL
+#define GB_FREE_ALL GB_Matrix_free (&S) ;
+#include "GB_static_header.h"
 
-GB_PUBLIC
 GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
 (
     GrB_Matrix C,                   // input/output matrix for results
@@ -103,6 +105,8 @@ GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
     GB_RETURN_IF_NULL_OR_FAULTY (C) ;
     GB_RETURN_IF_NULL_OR_FAULTY (scalar) ;
     GB_RETURN_IF_FAULTY (M_in) ;
+    GB_RETURN_IF_NULL (I) ;
+    GB_RETURN_IF_NULL (J) ;
 
     // get the descriptor
     GB_GET_DESCRIPTOR (info, desc, C_replace, Mask_comp, Mask_struct,
@@ -117,7 +121,30 @@ GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
 
     GrB_Index nvals ;
     GB_OK (GB_nvals (&nvals, (GrB_Matrix) scalar, Context)) ;
-    if (nvals == 1)
+
+    if (M == NULL && !Mask_comp && ni == 1 && nj == 1 && !C_replace)
+    {
+
+        //----------------------------------------------------------------------
+        // scalar assignment
+        //----------------------------------------------------------------------
+
+        const GrB_Index row = I [0] ;
+        const GrB_Index col = J [0] ;
+        if (nvals == 1)
+        { 
+            // set the element: C(row,col) += scalar or C(row,col) = scalar
+            info = GB_setElement (C, accum, scalar->x, row, col,
+                scalar->type->code, Context) ;
+        }
+        else if (accum == NULL)
+        { 
+            // delete the C(row,col) element
+            info = GB_Matrix_removeElement (C, row, col, Context) ;
+        }
+
+    }
+    else if (nvals == 1)
     { 
 
         //----------------------------------------------------------------------
@@ -126,7 +153,7 @@ GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
 
         // This is identical to non-opaque scalar assignment
 
-        info = (GB_assign (
+        info = GB_assign (
             C, C_replace,               // C matrix and its descriptor
             M, Mask_comp, Mask_struct,  // mask matrix and its descriptor
             false,                      // do not transpose the mask
@@ -138,7 +165,7 @@ GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
             scalar->x,                  // scalar to assign, expands to become A
             scalar->type->code,         // type code of scalar to expand
             GB_ASSIGN,
-            Context)) ;
+            Context) ;
 
     }
     else
@@ -156,12 +183,13 @@ GrB_Info GrB_Matrix_assign_Scalar   // C<Mask>(I,J) = accum (C(I,J),s)
 
         // create an empty matrix S of the right size, and use matrix assign
         struct GB_Matrix_opaque S_header ;
-        S = GB_clear_static_header (&S_header) ;
+        GB_CLEAR_STATIC_HEADER (S, &S_header) ;
         bool is_csc = C->is_csc ;
         int64_t vlen = is_csc ? nRows : nCols ;
         int64_t vdim = is_csc ? nCols : nRows ;
-        GB_OK (GB_new (&S, true, scalar->type, vlen, vdim, GB_Ap_calloc,
-            is_csc, GxB_AUTO_SPARSITY, GB_HYPER_SWITCH_DEFAULT, 1, Context)) ;
+        GB_OK (GB_new (&S,  // existing header
+            scalar->type, vlen, vdim, GB_Ap_calloc, is_csc, GxB_AUTO_SPARSITY,
+            GB_HYPER_SWITCH_DEFAULT, 1, Context)) ;
         info = GB_assign (
             C, C_replace,                   // C matrix and its descriptor
             M, Mask_comp, Mask_struct,      // mask matrix and its descriptor

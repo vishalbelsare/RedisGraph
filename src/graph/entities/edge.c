@@ -1,83 +1,85 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "RG.h"
 #include "edge.h"
+#include "../graph.h"
 #include "graph_entity.h"
-#include "../graphcontext.h"
-#include "../../query_ctx.h"
 
-NodeID Edge_GetSrcNodeID(const Edge *edge) {
+NodeID Edge_GetSrcNodeID
+(
+	const Edge *edge
+) {
 	ASSERT(edge);
-	return edge->srcNodeID;
+	return edge->src_id;
 }
 
-NodeID Edge_GetDestNodeID(const Edge *edge) {
+NodeID Edge_GetDestNodeID
+(
+	const Edge *edge
+) {
 	ASSERT(edge);
-	return edge->destNodeID;
+	return edge->dest_id;
 }
 
-int Edge_GetRelationID(const Edge *edge) {
+int Edge_GetRelationID
+(
+	const Edge *edge
+) {
 	ASSERT(edge);
+	ASSERT(edge->relationID != GRAPH_NO_RELATION);
+	ASSERT(edge->relationID != GRAPH_UNKNOWN_RELATION);
 	return edge->relationID;
 }
 
-Node *Edge_GetSrcNode(Edge *e) {
+void Edge_SetSrcNodeID
+(
+	Edge *e,
+	NodeID id
+) {
 	ASSERT(e);
-	return e->src;
+	e->src_id = id;
 }
 
-Node *Edge_GetDestNode(Edge *e) {
+void Edge_SetDestNodeID
+(
+	Edge *e,
+	NodeID id
+) {
 	ASSERT(e);
-	return e->dest;
+	e->dest_id = id;
 }
 
-RG_Matrix Edge_GetMatrix(Edge *e) {
-	ASSERT(e);
-
-	// retrieve matrix from graph if edge matrix isn't set
-	if(!e->mat) {
-		Graph *g = QueryCtx_GetGraph();
-
-		// get relation matrix
-		if(e->relationID == GRAPH_UNKNOWN_RELATION) {
-			e->mat = Graph_GetZeroMatrix(g);
-		} else {
-			e->mat = Graph_GetRelationMatrix(g, e->relationID, false);
-		}
-	}
-
-	return e->mat;
-}
-
-void Edge_SetSrcNode(Edge *e, Node *src) {
-	ASSERT(e && src);
-	e->src = src;
-	e->srcNodeID = ENTITY_GET_ID(src);
-}
-
-void Edge_SetDestNode(Edge *e, Node *dest) {
-	ASSERT(e && dest);
-	e->dest = dest;
-	e->destNodeID = ENTITY_GET_ID(dest);
-}
-
-void Edge_SetRelationID(Edge *e, int relationID) {
+void Edge_SetRelationID
+(
+	Edge *e,
+	RelationID relationID
+) {
 	ASSERT(e);
 	e->relationID = relationID;
 }
 
-void Edge_ToString(const Edge *e, char **buffer, size_t *bufferLen, size_t *bytesWritten,
-				   GraphEntityStringFromat format) {
+void Edge_ToString
+(
+	const Edge *e,
+	char **buffer,
+	size_t *bufferLen,
+	size_t *bytesWritten,
+	GraphEntityStringFormat format
+) {
 	GraphEntity_ToString((const GraphEntity *)e, buffer, bufferLen, bytesWritten, format, GETYPE_EDGE);
 }
 
-void Edge_Free(Edge *edge) {
+void Edge_Free
+(
+	Edge *edge
+) {
 	if(!edge) return;
 
 	free(edge);

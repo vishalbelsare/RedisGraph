@@ -1,7 +1,7 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "path_funcs.h"
@@ -12,7 +12,7 @@
 #include "../../util/rmalloc.h"
 #include "../../configuration/config.h"
 #include "../../datatypes/path/sipath_builder.h"
-#include "../../algorithms/LAGraph_bfs_pushpull.h"
+#include "../../algorithms/LAGraph/LAGraph_bfs.h"
 
 /* Creates a path from a given sequence of graph entities.
  * The first argument is the ast node represents the path.
@@ -21,46 +21,74 @@
  * Odd indices members are always representing the value of a single node.
  * Even indices members are either representing the value of a single edge,
  * or an sipath, in case of variable length traversal. */
-SIValue AR_TOPATH(SIValue *argv, int argc) {
+SIValue AR_TOPATH(SIValue *argv, int argc, void *private_data) {
 	const cypher_astnode_t *ast_path = argv[0].ptrval;
 	uint nelements = cypher_ast_pattern_path_nelements(ast_path);
 	ASSERT(argc == (nelements + 1));
 
-	SIValue path = SIPathBuilder_New(nelements);
+	uint n = 0;
+	uint path_elements = 0;
+	SIValue arr[nelements];
+	// collect path elements
+	// and calculate how much space needed for the returned path
 	for(uint i = 0; i < nelements; i++) {
 		SIValue element = argv[i + 1];
 		if(SI_TYPE(element) == T_NULL) {
-			/* If any element of the path does not exist, the entire path is invalid.
-			 * Free it and return a null value. */
-			SIValue_Free(path);
+			// if any element of the path does not exist
+			// the entire path is invalid
 			return SI_NullVal();
 		}
 
 		if(i % 2 == 0) {
-			// Nodes are in even position.
-			SIPathBuilder_AppendNode(path, element);
+			path_elements++;
 		} else {
-			// Edges and paths are in odd positions.
-			const cypher_astnode_t *ast_rel_pattern = cypher_ast_pattern_path_get_element(ast_path, i);
-			bool RTL_pattern = cypher_ast_rel_pattern_get_direction(ast_rel_pattern) == CYPHER_REL_INBOUND;
-			// Element type can be either edge, or path.
-			if(SI_TYPE(element) == T_EDGE) SIPathBuilder_AppendEdge(path, element, RTL_pattern);
-			// If element is not an edge, it is a path.
-			else {
-				/* Path with 0 edges should not be appended. Their source and destination nodes are the same,
-				 * and the source node already appended.
-				 * The build should continue to the next edge/path value. Consider the following query:
-				 * "MATCH p=(a:L1)-[*0..]->(b:L1)-[]->(c:L2)" for the graph in the form of (:L1)-[]->(:L2). The path build should
-				 * return a path with with the relevant entities.
-				 */
-				if(SIPath_Length(element) == 0) {
+			// edges and paths are in odd positions
+			// element type can be either edge, or path
+			if(SI_TYPE(element) == T_EDGE) {
+				path_elements++;
+			} else { // if element is not an edge, it is a path
+				// path with 0 edges should not be appended
+				// their source and destination nodes are the same
+				// and the source node already appended.
+				size_t len = SIPath_Length(element);
+				if(len == 0) {
 					i++;
 					continue;
 				}
+				// len - 1 nodes and len edges from this path
+				// will be added to the returned path 
+				path_elements += len * 2 - 1;
+			}
+		}
+		arr[n++] = element;
+	}
+
+	SIValue path = SIPathBuilder_New(path_elements);
+	for(uint i = 0; i < n; i++) {
+		SIValue element = arr[i];
+
+		if(i % 2 == 0) {
+			// nodes are in even position
+			SIPathBuilder_AppendNode(path, element);
+		} else {
+			// edges and paths are in odd positions
+			const cypher_astnode_t *ast_rel_pattern = cypher_ast_pattern_path_get_element(ast_path, i);
+			bool RTL_pattern = cypher_ast_rel_pattern_get_direction(ast_rel_pattern) == CYPHER_REL_INBOUND;
+			// element type can be either edge, or path
+			if(SI_TYPE(element) == T_EDGE) {
+				SIPathBuilder_AppendEdge(path, element, RTL_pattern);
+			} else { // if element is not an edge, it is a path
+				// the build should continue to the next edge/path value
+				// consider the following query
+				// for the graph in the form of (:L1)-[]->(:L2):
+				// "MATCH p=(a:L1)-[*0..]->(b:L1)-[]->(c:L2)"
+				// the path build should
+				// return a path with with the relevant entities.
 				SIPathBuilder_AppendPath(path, element, RTL_pattern);
 			}
 		}
 	}
+
 	return path;
 }
 
@@ -71,7 +99,6 @@ void ShortestPath_Free(void *ctx_ptr) {
 	if(ctx->reltype_names) array_free(ctx->reltype_names);
 	if(ctx->free_matrices) {
 		GrB_free(&ctx->R);
-		GrB_free(&ctx->TR);
 	}
 	rm_free(ctx);
 }
@@ -92,22 +119,20 @@ void *ShortestPath_Clone(void *orig) {
 	else ctx_clone->reltype_names = NULL;
 	// Do not clone matrix data
 	ctx_clone->R = GrB_NULL;
-	ctx_clone->TR = GrB_NULL;
 	ctx_clone->free_matrices = false;
 
 	return ctx_clone;
 }
 
-SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
+SIValue AR_SHORTEST_PATH(SIValue *argv, int argc, void *private_data) {
 	if(SI_TYPE(argv[0]) == T_NULL) return SI_NullVal();
 	if(SI_TYPE(argv[1]) == T_NULL) return SI_NullVal();
-	ASSERT(SI_TYPE(argv[2]) != T_NULL);
 
 	Node             *srcNode   =  argv[0].ptrval;
 	Node             *destNode  =  argv[1].ptrval;
-	ShortestPathCtx  *ctx       =  argv[2].ptrval;
-	int64_t src_id              =  ENTITY_GET_ID(srcNode);
-	int64_t dest_id             =  ENTITY_GET_ID(destNode);
+	ShortestPathCtx  *ctx       =  private_data;
+	GrB_Index src_id            =  ENTITY_GET_ID(srcNode);
+	GrB_Index dest_id           =  ENTITY_GET_ID(destNode);
 
 	GrB_Info res;
 	UNUSED(res);
@@ -116,10 +141,7 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 	GrB_Vector PI = GrB_NULL; // vector backtracking results to their parents
 	GraphContext *gc = QueryCtx_GetGraphCtx();
 
-	/* The BFS algorithm uses a level of 1 to indicate the source node.
-	 * If this value is not zero (unlimited), increment it by 1
-	 * to make level 1 indicate the source's direct neighbors. */
-	int64_t max_level = (ctx->maxHops == EDGE_LENGTH_INF) ? 0 : ctx->maxHops + 1;
+	GrB_Index max_level = (ctx->maxHops == EDGE_LENGTH_INF) ? 0 : ctx->maxHops;
 
 	if(ctx->R == GrB_NULL) {
 		// First invocation, initialize unset context members.
@@ -143,24 +165,16 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 			res = RG_Matrix_export(&ctx->R, Graph_GetAdjacencyMatrix(gc->g,
 						false));
 			ASSERT(res == GrB_SUCCESS);
-			res = RG_Matrix_export(&ctx->TR, Graph_GetAdjacencyMatrix(gc->g,
-						true));
-			ASSERT(res == GrB_SUCCESS);
 		} else if(ctx->reltype_count == 0) {
 			// If edge types were specified but none were valid,
 			// use the zero matrix
 			ctx->free_matrices = true;
 			res = RG_Matrix_export(&ctx->R, Graph_GetZeroMatrix(gc->g));
 			ASSERT(res == GrB_SUCCESS);
-			res = RG_Matrix_export(&ctx->TR, Graph_GetZeroMatrix(gc->g));
-			ASSERT(res == GrB_SUCCESS);
 		} else if(ctx->reltype_count == 1) {
 			ctx->free_matrices = true;
 			res = RG_Matrix_export(&ctx->R, Graph_GetRelationMatrix(gc->g,
 						ctx->reltypes[0], false));
-			ASSERT(res == GrB_SUCCESS);
-			res = RG_Matrix_export(&ctx->TR, Graph_GetRelationMatrix(gc->g,
-						ctx->reltypes[0], true));
 			ASSERT(res == GrB_SUCCESS);
 		} else {
 			// we have multiple edge types, combine them into a boolean matrix
@@ -184,17 +198,15 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 			GrB_Index nrows;
 			res = GrB_Matrix_nrows(&nrows, ctx->R);
 			ASSERT(res == GrB_SUCCESS);
-			res = GrB_Matrix_new(&ctx->TR, GrB_BOOL, nrows, nrows);
-			ASSERT(res == GrB_SUCCESS);
-			res = GrB_transpose(ctx->TR, NULL, NULL, ctx->R, GrB_DESC_R);
-			ASSERT(res == GrB_SUCCESS);
 		}
 	}
 
 	// Invoke the BFS algorithm
-	res = LAGraph_bfs_pushpull(&V, &PI, ctx->R, ctx->TR, src_id,
-							   &dest_id, max_level, true);
+	res = LG_BreadthFirstSearch_SSGrB(&V, &PI, ctx->R, src_id, &dest_id,
+		max_level);
 	ASSERT(res == GrB_SUCCESS);
+	ASSERT(V != GrB_NULL);
+	ASSERT(PI != GrB_NULL);
 
 	SIValue p = SI_NullVal();
 
@@ -202,8 +214,6 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 	GrB_Index path_len;
 	res = GrB_Vector_extractElement(&path_len, V, dest_id);
 	if(res == GrB_NO_VALUE) goto cleanup; // no path found
-
-	path_len -= 1; // Convert node count to edge count
 
 	// Only emit a path with no edges if minHops is 0
 	if(path_len == 0 && ctx->minHops != 0) goto cleanup;
@@ -223,7 +233,6 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 		// Find the parent of the reached node.
 		GrB_Info res = GrB_Vector_extractElement(&parent_id, PI, id);
 		ASSERT(res == GrB_SUCCESS);
-		parent_id --; // Decrement the parent ID by 1 to correct 1-indexing.
 
 		// Retrieve edges connecting the parent node to the current node.
 		if(ctx->reltype_count == 0) {
@@ -239,7 +248,7 @@ SIValue AR_SHORTEST_PATH(SIValue *argv, int argc) {
 		SIPathBuilder_AppendEdge(p, SI_Edge(&edges[0]), false);
 
 		// Append the reached node to the path.
-		id = edges[0].srcNodeID;
+		id = Edge_GetSrcNodeID(&edges[0]);
 		Node n = GE_NEW_NODE();
 		Graph_GetNode(gc->g, id, &n);
 		SIPathBuilder_AppendNode(p, SI_Node(&n));
@@ -256,52 +265,57 @@ cleanup:
 	return p;
 }
 
-SIValue AR_PATH_NODES(SIValue *argv, int argc) {
+SIValue AR_PATH_NODES(SIValue *argv, int argc, void *private_data) {
 	if(SI_TYPE(argv[0]) == T_NULL) return SI_NullVal();
 	return SIPath_Nodes(argv[0]);
 }
 
-SIValue AR_PATH_RELATIONSHIPS(SIValue *argv, int argc) {
+SIValue AR_PATH_RELATIONSHIPS(SIValue *argv, int argc, void *private_data) {
 	if(SI_TYPE(argv[0]) == T_NULL) return SI_NullVal();
 	return SIPath_Relationships(argv[0]);
 }
 
-SIValue AR_PATH_LENGTH(SIValue *argv, int argc) {
+SIValue AR_PATH_LENGTH(SIValue *argv, int argc, void *private_data) {
 	if(SI_TYPE(argv[0]) == T_NULL) return SI_NullVal();
 	return SI_LongVal(SIPath_Length(argv[0]));
 }
 
 void Register_PathFuncs() {
 	SIType *types;
+	SIType ret_type;
 	AR_FuncDesc *func_desc;
 
 	types = array_new(SIType, 2);
 	array_append(types, T_PTR);
 	array_append(types, T_NULL | T_NODE | T_EDGE | T_PATH);
-	func_desc = AR_FuncDescNew("topath", AR_TOPATH, 1, VAR_ARG_LEN, types, false, false);
+	ret_type = T_PATH | T_NULL;
+	func_desc = AR_FuncDescNew("topath", AR_TOPATH, 1, VAR_ARG_LEN, types, ret_type, true, false);
 	AR_RegFunc(func_desc);
 
 	types = array_new(SIType, 3);
 	array_append(types, T_NULL | T_NODE);
 	array_append(types, T_NULL | T_NODE);
-	array_append(types, T_PTR); // pointer to ShortestPathCtx struct
-	func_desc = AR_FuncDescNew("shortestpath", AR_SHORTEST_PATH, 3, 3, types, false, false);
+	ret_type = T_PATH | T_NULL;
+	func_desc = AR_FuncDescNew("shortestpath", AR_SHORTEST_PATH, 2, 2, types, ret_type, true, false);
 	AR_SetPrivateDataRoutines(func_desc, ShortestPath_Free, ShortestPath_Clone);
 	AR_RegFunc(func_desc);
 
 	types = array_new(SIType, 1);
 	array_append(types, T_NULL | T_PATH);
-	func_desc = AR_FuncDescNew("nodes", AR_PATH_NODES, 1, 1, types, false, false);
+	ret_type = T_ARRAY | T_NULL;
+	func_desc = AR_FuncDescNew("nodes", AR_PATH_NODES, 1, 1, types, ret_type, false, false);
 	AR_RegFunc(func_desc);
 
 	types = array_new(SIType, 1);
 	array_append(types, T_NULL | T_PATH);
-	func_desc = AR_FuncDescNew("relationships", AR_PATH_RELATIONSHIPS, 1, 1, types, false, false);
+	ret_type = T_ARRAY | T_NULL;
+	func_desc = AR_FuncDescNew("relationships", AR_PATH_RELATIONSHIPS, 1, 1, types, ret_type, false, false);
 	AR_RegFunc(func_desc);
 
 	types = array_new(SIType, 1);
 	array_append(types, T_NULL | T_PATH);
-	func_desc = AR_FuncDescNew("length", AR_PATH_LENGTH, 1, 1, types, false, false);
+	ret_type = T_INT64 | T_NULL;
+	func_desc = AR_FuncDescNew("length", AR_PATH_LENGTH, 1, 1, types, ret_type, false, false);
 	AR_RegFunc(func_desc);
 }
 

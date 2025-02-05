@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "op_distinct.h"
 #include "op_project.h"
@@ -12,9 +12,10 @@
 #include "../execution_plan_build/execution_plan_modify.h"
 
 /* Forward declarations. */
-static Record DistinctConsume(OpBase *opBase);
-static OpBase *DistinctClone(const ExecutionPlan *plan, const OpBase *opBase);
 static void DistinctFree(OpBase *opBase);
+static Record DistinctConsume(OpBase *opBase);
+static OpResult DistinctReset(OpBase *opBase);
+static OpBase *DistinctClone(const ExecutionPlan *plan, const OpBase *opBase);
 
 // compute hash on distinct values
 // values that are required to be distinct are located at 'offset'
@@ -66,7 +67,7 @@ OpBase *NewDistinctOp(const ExecutionPlan *plan, const char **aliases, uint alia
 	memcpy(op->aliases, aliases, alias_count * sizeof(const char *));
 
 	OpBase_Init((OpBase *)op, OPType_DISTINCT, "Distinct", NULL, DistinctConsume,
-				NULL, NULL, DistinctClone, DistinctFree, false, plan);
+				DistinctReset, NULL, DistinctClone, DistinctFree, false, plan);
 
 	return (OpBase *)op;
 }
@@ -80,8 +81,8 @@ static Record DistinctConsume(OpBase *opBase) {
 		if(!r) return NULL;
 
 		// update offsets if record mapping changed
-		// it is possible for the record's mapping to be changed throughtout
-		// the execution as this distinct operation might recieve records from
+		// it is possible for the record's mapping to be changed throughout
+		// the execution as this distinct operation might receive records from
 		// different sub execution plans, such as in the case of UNION
 		// in which case the distinct values might be located at different offsets
 		// within the record and we should adjust accordingly
@@ -104,6 +105,20 @@ static inline OpBase *DistinctClone(const ExecutionPlan *plan, const OpBase *opB
 	ASSERT(opBase->type == OPType_DISTINCT);
 	OpDistinct *op = (OpDistinct *)opBase;
 	return NewDistinctOp(plan, op->aliases, op->offset_count);
+}
+
+static OpResult DistinctReset
+(
+	OpBase *opBase
+) {
+	OpDistinct *op = (OpDistinct *)opBase;
+
+	if(op->found) {
+		raxFree(op->found);
+		op->found = raxNew();
+	}
+
+	return OP_OK;
 }
 
 static void DistinctFree(OpBase *ctx) {

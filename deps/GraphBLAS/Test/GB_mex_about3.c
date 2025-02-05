@@ -2,7 +2,7 @@
 // GB_mex_about3: still more basic tests
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -39,7 +39,10 @@ int myflush (void)
 
 typedef int (* printf_func_t) (const char *restrict format, ...) ;
 typedef int (* flush_func_t)  (void) ;
-typedef struct { int64_t blob [4] ; } myblob_struct ;
+
+ typedef struct { int64_t stuff [4] ; } my4x64 ;
+#define MY4X64 \
+"typedef struct { int64_t stuff [4] ; } my4x64 ;"
 
 void mexFunction
 (
@@ -54,7 +57,7 @@ void mexFunction
     GrB_Matrix C = NULL, A = NULL, M = NULL ;
     GrB_Descriptor desc = NULL ;
     GrB_Vector w = NULL ;
-    GrB_Type myint = NULL, myblob = NULL ;
+    GrB_Type myint = NULL, My4x64 = NULL ;
     GB_void *Null = NULL ;
     char *err ;
 
@@ -83,13 +86,17 @@ void mexFunction
     OK (GxB_Global_Option_set (GxB_PRINTF, myprintf)) ;
     OK (GxB_Global_Option_set (GxB_FLUSH, myflush)) ;
 
-    printf_func_t mypr ;
+    printf_func_t mypr, mypr2 ;
     OK (GxB_Global_Option_get (GxB_PRINTF, &mypr)) ;
+    OK (GxB_Global_Option_get_FUNCTION (GxB_PRINTF, (void **) &mypr2)) ;
     CHECK (mypr == myprintf) ;
+    CHECK (mypr2 == myprintf) ;
 
-    flush_func_t myfl ;
+    flush_func_t myfl, myfl2 ;
     OK (GxB_Global_Option_get (GxB_FLUSH, &myfl)) ;
+    OK (GxB_Global_Option_get_FUNCTION (GxB_FLUSH, (void **) &myfl2)) ;
     CHECK (myfl == myflush) ;
+    CHECK (myfl2 == myflush) ;
 
     printf ("\nBurble with myprintf/myflush:\n") ;
     OK (GrB_Matrix_nvals (&nvals, C)) ;
@@ -99,44 +106,79 @@ void mexFunction
     OK (GxB_Global_Option_set (GxB_PRINTF, printf)) ;
     OK (GxB_Global_Option_set (GxB_FLUSH, NULL)) ;
 
+    OK (GxB_Global_Option_set_FUNCTION (GxB_PRINTF, myprintf)) ;
+    OK (GxB_Global_Option_set_FUNCTION (GxB_FLUSH, myflush)) ;
+
+    OK (GxB_Global_Option_get_FUNCTION (GxB_PRINTF, (void **) &mypr2)) ;
+    OK (GxB_Global_Option_get_FUNCTION (GxB_FLUSH, (void **) &myfl2)) ;
+    CHECK (mypr2 == myprintf) ;
+    CHECK (myfl2 == myflush) ;
+
+    OK (GxB_Global_Option_set (GxB_PRINTF, printf)) ;
+    OK (GxB_Global_Option_set (GxB_FLUSH, NULL)) ;
+
     //--------------------------------------------------------------------------
     // test GxB_set/get for free_pool_limit
     //--------------------------------------------------------------------------
 
-    int64_t free_pool_limit [64] ;
+    int64_t free_pool_limit [64], free_pool_limit2 [64] ;
+    int64_t free_pool_defaults [64] ;
+    for (int k = 0 ; k < 64 ; k++)
+    {
+        free_pool_limit [k] = k+1 ;
+        free_pool_limit2 [k] = 3*k + 4 ;
+    }
+
     OK (GxB_Global_Option_set (GxB_MEMORY_POOL, NULL)) ;
-    OK (GxB_Global_Option_get (GxB_MEMORY_POOL, free_pool_limit)) ;
+    OK (GxB_Global_Option_get (GxB_MEMORY_POOL, free_pool_defaults)) ;
+    OK (GxB_Global_Option_get_INT64 (GxB_MEMORY_POOL, free_pool_limit2)) ;
     printf ("\ndefault memory pool limits:\n") ;
     for (int k = 0 ; k < 64 ; k++)
     {
-        if (free_pool_limit [k] > 0)
+        if (free_pool_defaults [k] > 0)
         {
-            printf ("pool %2d: limit %ld\n", k, free_pool_limit [k]) ;
+            printf ("pool %2d: limit %ld\n", k, free_pool_defaults [k]) ;
         }
+        CHECK (free_pool_defaults [k] == free_pool_limit2 [k]) ;
     }
+
     for (int k = 0 ; k < 64 ; k++)
     {
         free_pool_limit [k] = k ;
     }
     OK (GxB_Global_Option_set (GxB_MEMORY_POOL, free_pool_limit)) ;
     OK (GxB_Global_Option_get (GxB_MEMORY_POOL, free_pool_limit)) ;
+    OK (GxB_Global_Option_get_INT64 (GxB_MEMORY_POOL, free_pool_limit2)) ;
     for (int k = 0 ; k < 3 ; k++)
     {
         CHECK (free_pool_limit [k] == 0) ;
+        CHECK (free_pool_limit2 [k] == 0) ;
     }
     for (int k = 3 ; k < 64 ; k++)
     {
         CHECK (free_pool_limit [k] == k) ;
+        CHECK (free_pool_limit2 [k] == k) ;
     }
     for (int k = 0 ; k < 64 ; k++)
     {
         free_pool_limit [k] = 0 ;
+        free_pool_limit2 [k] = 0 ;
     }
+
     OK (GxB_Global_Option_set (GxB_MEMORY_POOL, free_pool_limit)) ;
     OK (GxB_Global_Option_get (GxB_MEMORY_POOL, free_pool_limit)) ;
+    OK (GxB_Global_Option_get_INT64 (GxB_MEMORY_POOL, free_pool_limit2)) ;
     for (int k = 0 ; k < 64 ; k++)
     {
         CHECK (free_pool_limit [k] == 0) ;
+        CHECK (free_pool_limit2 [k] == 0) ;
+    }
+
+    OK (GxB_Global_Option_set_INT64_ARRAY (GxB_MEMORY_POOL, NULL)) ;
+    OK (GxB_Global_Option_get_INT64 (GxB_MEMORY_POOL, free_pool_limit2)) ;
+    for (int k = 0 ; k < 64 ; k++)
+    {
+        CHECK (free_pool_defaults [k] == free_pool_limit2 [k]) ;
     }
 
     //--------------------------------------------------------------------------
@@ -208,11 +250,7 @@ void mexFunction
     OK (GxB_Matrix_Option_set ((GrB_Matrix) scalar, GxB_SPARSITY_CONTROL,
         GxB_SPARSE)) ;
     scalar->jumbled = true ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Scalar_wait (&scalar)) ;
-    #else
     OK (GrB_Scalar_wait (scalar, GrB_MATERIALIZE)) ;
-    #endif
 
     OK (GxB_Scalar_fprint (scalar, "scalar", GxB_COMPLETE, NULL)) ;
 
@@ -243,52 +281,48 @@ void mexFunction
     GrB_Index *Ap = NULL, *Ai = NULL, *Ah = NULL ;
     float *Ax = NULL ;
     bool iso, jumbled ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait (&C)) ;
-    #else
     OK (GrB_Matrix_wait (C, GrB_MATERIALIZE)) ;
-    #endif
     OK (GxB_Matrix_fprint (C, "C to export", GxB_COMPLETE, NULL)) ;
 
     // export as CSC
-    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai, &Ax,
-        &Ap_size, &Ai_size, &Ax_size, &iso, &jumbled, NULL)) ;
+    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai,
+        (void **) &Ax, &Ap_size, &Ai_size, &Ax_size, &iso, &jumbled, NULL)) ;
 
     // import as CSC
     expected = GrB_INVALID_VALUE ;
-    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        0, Ai_size, Ax_size, iso, jumbled, NULL)) ;
-    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, 0, Ax_size, iso, jumbled, NULL)) ;
-    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, Ai_size, 0, iso, jumbled, NULL)) ;
-    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Null,
-        Ap_size, Ai_size, 0, true, jumbled, NULL)) ;
+    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, 0, Ai_size, Ax_size, iso, jumbled, NULL)) ;
+    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, 0, Ax_size, iso, jumbled, NULL)) ;
+    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, Ai_size, 0, iso, jumbled, NULL)) ;
+    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Null, Ap_size, Ai_size, 0, true, jumbled, NULL)) ;
 
-    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, Ai_size, Ax_size, iso, jumbled, NULL)) ;
+    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, Ai_size, Ax_size, iso, jumbled, NULL)) ;
     OK (GxB_Matrix_fprint (C, "C imported sparse", GxB_COMPLETE, NULL)) ;
 
     // export as HyperCSC
     OK (GxB_Matrix_export_HyperCSC (&C, &type, &nrows, &ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         &Ap_size, &Ah_size, &Ai_size, &Ax_size, &iso, &nvec, &jumbled, NULL)) ;
 
     // import as HyperCSC
     ERR (GxB_Matrix_import_HyperCSC (&C, type, nrows, ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         0, Ah_size, Ai_size, Ax_size, iso, nvec, jumbled, NULL)) ;
     ERR (GxB_Matrix_import_HyperCSC (&C, type, nrows, ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         Ap_size, 0, Ai_size, Ax_size, iso, nvec, jumbled, NULL)) ;
     ERR (GxB_Matrix_import_HyperCSC (&C, type, nrows, ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         Ap_size, Ah_size, 0, Ax_size, iso, nvec, jumbled, NULL)) ;
     ERR (GxB_Matrix_import_HyperCSC (&C, type, nrows, ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         Ap_size, Ah_size, Ai_size, 0, iso, nvec, jumbled, NULL)) ;
     OK (GxB_Matrix_import_HyperCSC (&C, type, nrows, ncols,
-        &Ap, &Ah, &Ai, &Ax,
+        &Ap, &Ah, &Ai, (void **) &Ax,
         Ap_size, Ah_size, Ai_size, Ax_size, iso, nvec, jumbled, NULL)) ;
     OK (GxB_Matrix_fprint (C, "C imported hyper", GxB_SHORT, NULL)) ;
     GrB_Matrix_free_(&C) ;
@@ -298,14 +332,14 @@ void mexFunction
         NULL)) ;
 
     // export as CSC, non-iso
-    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai, &Ax,
-        &Ap_size, &Ai_size, &Ax_size, NULL, &jumbled, NULL)) ;
+    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai,
+        (void **) &Ax, &Ap_size, &Ai_size, &Ax_size, NULL, &jumbled, NULL)) ;
 
-    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, Ai_size, 0, false, jumbled, NULL)) ;
+    ERR (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, Ai_size, 0, false, jumbled, NULL)) ;
 
-    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, Ai_size, Ax_size, false, jumbled, NULL)) ;
+    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, Ai_size, Ax_size, false, jumbled, NULL)) ;
 
     OK (GxB_Matrix_fprint (C, "C imported non-iso", GxB_SHORT, NULL)) ;
     OK (GrB_Matrix_free_(&C)) ;
@@ -314,12 +348,12 @@ void mexFunction
     OK (GrB_Matrix_new (&C, GrB_FP32, 10, 10)) ;
     OK (GrB_Matrix_assign_FP32 (C, NULL, NULL, 1, GrB_ALL, 10, GrB_ALL, 10,
         NULL)) ;
-    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai, &Ax,
-        &Ap_size, &Ai_size, &Ax_size, &iso, &jumbled, NULL)) ;
+    OK (GxB_Matrix_export_CSC (&C, &type, &nrows, &ncols, &Ap, &Ai,
+        (void **) &Ax, &Ap_size, &Ai_size, &Ax_size, &iso, &jumbled, NULL)) ;
 
     // import as CSC iso
-    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai, &Ax,
-        Ap_size, Ai_size, Ax_size, iso, jumbled, NULL)) ;
+    OK (GxB_Matrix_import_CSC (&C, type, nrows, ncols, &Ap, &Ai,
+        (void **) &Ax, Ap_size, Ai_size, Ax_size, iso, jumbled, NULL)) ;
     OK (GxB_Matrix_fprint (C, "C imported iso", GxB_SHORT, NULL)) ;
     OK (GrB_Matrix_free_(&C)) ;
 
@@ -329,10 +363,10 @@ void mexFunction
 
     CHECK (sizeof (GB_blob16) == 2 * sizeof (uint64_t)) ;
 
-    OK (GrB_Type_new (&myblob, sizeof (myblob_struct))) ;
-    OK (GxB_Type_fprint (myblob, "myblob", GxB_COMPLETE, NULL)) ;
-    myblob_struct blob_scalar ;
-    OK (GrB_Matrix_new (&C, myblob, 4, 4)) ;
+    OK (GxB_Type_new (&My4x64, sizeof (my4x64), "my4x64", MY4X64)) ;
+    OK (GxB_Type_fprint (My4x64, "My4x64", GxB_COMPLETE, NULL)) ;
+    my4x64 my4x64_scalar ;
+    OK (GrB_Matrix_new (&C, My4x64, 4, 4)) ;
 
     GrB_Matrix Tiles [4]  = { NULL, NULL, NULL, NULL} ;
     GrB_Index Tile_nrows [2] = { 2, 2 } ;
@@ -351,34 +385,30 @@ void mexFunction
             for (int j = 0 ; j < 4 ; j++)
             {
                 if (sparsity_control < 8 && i == j) continue ;
-                blob_scalar.blob [0] = i ;
-                blob_scalar.blob [1] = j ;
-                blob_scalar.blob [2] = 32 ;
-                blob_scalar.blob [3] = 99 ;
-                OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, i, j)) ;
+                my4x64_scalar.stuff [0] = i ;
+                my4x64_scalar.stuff [1] = j ;
+                my4x64_scalar.stuff [2] = 32 ;
+                my4x64_scalar.stuff [3] = 99 ;
+                OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, i, j)) ;
             }
         }
-        #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-        OK (GrB_Matrix_wait (&C)) ;
-        #else
         OK (GrB_Matrix_wait (C, GrB_MATERIALIZE)) ;
-        #endif
         OK (GxB_Matrix_Option_set (C, GxB_SPARSITY_CONTROL, sparsity_control)) ;
-        OK (GxB_Matrix_fprint (C, "C blob", GxB_SHORT, NULL)) ;
+        OK (GxB_Matrix_fprint (C, "C stuff", GxB_SHORT, NULL)) ;
 
         for (int i = 0 ; i < 4 ; i++)
         {
             for (int j = 0 ; j < 4 ; j++)
             {
-                OK (GrB_Matrix_extractElement_UDT (&blob_scalar, C, i, j)) ;
+                OK (GrB_Matrix_extractElement_UDT (&my4x64_scalar, C, i, j)) ;
                 if (sparsity_control < 8 && i == j) continue ;
-                CHECK (blob_scalar.blob [0] == i) ;
-                CHECK (blob_scalar.blob [1] == j) ;
-                CHECK (blob_scalar.blob [2] == 32) ;
-                CHECK (blob_scalar.blob [3] == 99) ;
+                CHECK (my4x64_scalar.stuff [0] == i) ;
+                CHECK (my4x64_scalar.stuff [1] == j) ;
+                CHECK (my4x64_scalar.stuff [2] == 32) ;
+                CHECK (my4x64_scalar.stuff [3] == 99) ;
                 printf ("C(%d,%d) = [%d, %d, %d, %d]\n", i, j,
-                    blob_scalar.blob [0], blob_scalar.blob [1],
-                    blob_scalar.blob [2], blob_scalar.blob [3]) ;
+                    my4x64_scalar.stuff [0], my4x64_scalar.stuff [1],
+                    my4x64_scalar.stuff [2], my4x64_scalar.stuff [3]) ;
             }
         }
 
@@ -395,15 +425,15 @@ void mexFunction
                 for (int j = 0 ; j < 2 ; j++)
                 {
                     if (sparsity_control < 8 && i+istart == j+jstart) continue ;
-                    OK (GrB_Matrix_extractElement_UDT (&blob_scalar,
+                    OK (GrB_Matrix_extractElement_UDT (&my4x64_scalar,
                         Tiles [k], i, j)) ;
                     printf ("Tile(%d,%d) = [%d, %d, %d, %d]\n", i, j,
-                        blob_scalar.blob [0], blob_scalar.blob [1],
-                        blob_scalar.blob [2], blob_scalar.blob [3]) ;
-                    CHECK (blob_scalar.blob [0] == i + istart) ;
-                    CHECK (blob_scalar.blob [1] == j + jstart) ;
-                    CHECK (blob_scalar.blob [2] == 32) ;
-                    CHECK (blob_scalar.blob [3] == 99) ;
+                        my4x64_scalar.stuff [0], my4x64_scalar.stuff [1],
+                        my4x64_scalar.stuff [2], my4x64_scalar.stuff [3]) ;
+                    CHECK (my4x64_scalar.stuff [0] == i + istart) ;
+                    CHECK (my4x64_scalar.stuff [1] == j + jstart) ;
+                    CHECK (my4x64_scalar.stuff [2] == 32) ;
+                    CHECK (my4x64_scalar.stuff [3] == 99) ;
                 }
             }
             OK (GrB_Matrix_free_(& (Tiles [k]))) ;
@@ -411,54 +441,50 @@ void mexFunction
     }
 
     // create an iso matrix
-    OK (GrB_Matrix_assign_UDT (C, NULL, NULL, (void *) &blob_scalar,
+    OK (GrB_Matrix_assign_UDT (C, NULL, NULL, (void *) &my4x64_scalar,
         GrB_ALL, 10, GrB_ALL, 10, NULL)) ;
-    OK (GxB_Matrix_fprint (C, "C blob iso", GxB_COMPLETE, NULL)) ;
+    OK (GxB_Matrix_fprint (C, "C stuff iso", GxB_COMPLETE, NULL)) ;
 
     // export as FullC, non-iso
-    OK (GxB_Matrix_export_FullC (&C, &type, &nrows, &ncols, &Ax, &Ax_size,
-        NULL, NULL)) ;
+    OK (GxB_Matrix_export_FullC (&C, &type, &nrows, &ncols,
+        (void **) &Ax, &Ax_size, NULL, NULL)) ;
 
     // import as FullC, non-iso
-    OK (GxB_Matrix_import_FullC (&C, type, nrows, ncols, &Ax, Ax_size,
-        false, NULL)) ;
+    OK (GxB_Matrix_import_FullC (&C, type, nrows, ncols,
+        (void **) &Ax, Ax_size, false, NULL)) ;
 
-    OK (GxB_Matrix_fprint (C, "C blob iso imported", GxB_COMPLETE, NULL)) ;
+    OK (GxB_Matrix_fprint (C, "C stuff iso imported", GxB_COMPLETE, NULL)) ;
 
     for (int i = 0 ; i < 4 ; i++)
     {
         for (int j = 0 ; j < 4 ; j++)
         {
-            OK (GrB_Matrix_extractElement_UDT (&blob_scalar, C, i, j)) ;
+            OK (GrB_Matrix_extractElement_UDT (&my4x64_scalar, C, i, j)) ;
             printf ("C(%d,%d) = [%d, %d, %d, %d]\n", i, j,
-                blob_scalar.blob [0], blob_scalar.blob [1],
-                blob_scalar.blob [2], blob_scalar.blob [3]) ;
+                my4x64_scalar.stuff [0], my4x64_scalar.stuff [1],
+                my4x64_scalar.stuff [2], my4x64_scalar.stuff [3]) ;
         }
     }
 
     // change to iso sparse, and test GB_ix_realloc
     OK (GxB_Matrix_Option_set (C, GxB_SPARSITY_CONTROL, GxB_SPARSE)) ;
-    OK (GrB_Matrix_assign_UDT (C, NULL, NULL, (void *) &blob_scalar,
+    OK (GrB_Matrix_assign_UDT (C, NULL, NULL, (void *) &my4x64_scalar,
         GrB_ALL, 10, GrB_ALL, 10, NULL)) ;
     OK (GB_ix_realloc (C, 32, NULL)) ;
-    OK (GxB_Matrix_fprint (C, "C blob sparse non-iso", GxB_COMPLETE, NULL)) ;
+    OK (GxB_Matrix_fprint (C, "C stuff sparse non-iso", GxB_COMPLETE, NULL)) ;
 
     // test wait on jumbled matrix (non-iso)
-    OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, 0, 0)) ;
-    blob_scalar.blob [0] = 1007 ;
-    OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, 1, 1)) ;
+    OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, 0, 0)) ;
+    my4x64_scalar.stuff [0] = 1007 ;
+    OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, 1, 1)) ;
     C->jumbled = true ;
-    OK (GxB_Matrix_fprint (C, "C blob jumbled", GxB_COMPLETE, NULL)) ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait (&C)) ;
-    #else
+    OK (GxB_Matrix_fprint (C, "C stuff jumbled", GxB_COMPLETE, NULL)) ;
     OK (GrB_Matrix_wait (C, GrB_MATERIALIZE)) ;
-    #endif
-    OK (GxB_Matrix_fprint (C, "C blob wait", GxB_COMPLETE, NULL)) ;
+    OK (GxB_Matrix_fprint (C, "C stuff wait", GxB_COMPLETE, NULL)) ;
 
     // converting a non-iso matrix to non-iso does nothing
     OK (GB_convert_any_to_non_iso (C, true, NULL)) ;
-    OK (GxB_Matrix_fprint (C, "C blob non iso", GxB_COMPLETE, NULL)) ;
+    OK (GxB_Matrix_fprint (C, "C stuff non iso", GxB_COMPLETE, NULL)) ;
     GrB_Matrix_free_(&C) ;
 
     //--------------------------------------------------------------------------
@@ -569,11 +595,7 @@ void mexFunction
     OK (GrB_Matrix_new (&C, GrB_FP32, 10, 10)) ;
     OK (GrB_Matrix_setElement_FP32 (C, 9.9, 4, 4)) ;
     OK (GrB_Matrix_setElement_FP32 (C, 9.7, 3, 3)) ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait (&C)) ;
-    #else
     OK (GrB_Matrix_wait (C, GrB_MATERIALIZE)) ;
-    #endif
     OK (GrB_Matrix_dup (&A, C)) ;
     save = A->x ;
     A->x = C->x ;
@@ -664,38 +686,26 @@ void mexFunction
     OK (GrB_Matrix_assign_FP32 (C, NULL, NULL, 1, GrB_ALL, 4, GrB_ALL, 4,
         NULL)) ;
     OK (GxB_Matrix_Option_set (C, GxB_SPARSITY_CONTROL, GxB_SPARSE)) ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait_(&C)) ;
-    #else
     OK (GrB_Matrix_wait_(C, GrB_MATERIALIZE)) ;
-    #endif
     CHECK (GB_iso_check (C, NULL)) ;
     GrB_Matrix_free_(&C) ;
 
-    OK (GrB_Matrix_new (&C, myblob, 10, 10)) ;
+    OK (GrB_Matrix_new (&C, My4x64, 10, 10)) ;
     OK (GxB_Matrix_Option_set (C, GxB_SPARSITY_CONTROL, GxB_SPARSE)) ;
-    blob_scalar.blob [0] = 1 ;
-    blob_scalar.blob [1] = 2 ;
-    blob_scalar.blob [2] = 3 ;
-    blob_scalar.blob [3] = 4 ;
-    OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, 3, 2)) ;
-    OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, 0, 0)) ;
+    my4x64_scalar.stuff [0] = 1 ;
+    my4x64_scalar.stuff [1] = 2 ;
+    my4x64_scalar.stuff [2] = 3 ;
+    my4x64_scalar.stuff [3] = 4 ;
+    OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, 3, 2)) ;
+    OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, 0, 0)) ;
     CHECK (!GB_iso_check (C, NULL)) ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait_(&C)) ;
-    #else
     OK (GrB_Matrix_wait_(C, GrB_MATERIALIZE)) ;
-    #endif
     CHECK (GB_iso_check (C, NULL)) ;
 
-    blob_scalar.blob [0] = 4 ;
-    OK (GrB_Matrix_setElement_UDT (C, &blob_scalar, 4, 4)) ;
+    my4x64_scalar.stuff [0] = 4 ;
+    OK (GrB_Matrix_setElement_UDT (C, &my4x64_scalar, 4, 4)) ;
     CHECK (!GB_iso_check (C, NULL)) ;
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait_(&C)) ;
-    #else
     OK (GrB_Matrix_wait_(C, GrB_MATERIALIZE)) ;
-    #endif
     CHECK (!GB_iso_check (C, NULL)) ;
     GrB_Matrix_free_(&C) ;
 
@@ -743,13 +753,8 @@ void mexFunction
     OK (GxB_Scalar_memoryUsage (&size, scalar)) ;
     printf ("size of scalar: %lu bytes\n", size) ;
 
-    #if (GxB_IMPLEMENTATION_MAJOR <= 5)
-    OK (GrB_Matrix_wait (&C)) ;
-    OK (GrB_Vector_wait (&w)) ;
-    #else
     OK (GrB_Matrix_wait (C, GrB_MATERIALIZE)) ;
     OK (GrB_Vector_wait (w, GrB_MATERIALIZE)) ;
-    #endif
 
     OK (GxB_Matrix_fprint (C, "non-empty C for size (no pending)",
         GxB_COMPLETE, NULL)) ;
@@ -773,7 +778,7 @@ void mexFunction
 
     int64_t nallocs ;
     size_t mem_deep, mem_shallow ;
-    OK (GB_memoryUsage (&nallocs, &mem_deep, &mem_shallow, NULL)) ;
+    GB_memoryUsage (&nallocs, &mem_deep, &mem_shallow, NULL, false) ;
     CHECK (nallocs == 0) ;
     CHECK (mem_deep == 0) ;
     CHECK (mem_shallow == 0) ;
@@ -782,7 +787,7 @@ void mexFunction
     // wrapup
     //--------------------------------------------------------------------------
 
-    GrB_Type_free_(&myblob) ;
+    GrB_Type_free_(&My4x64) ;
     GB_mx_put_global (true) ;   
     fclose (f) ;
     printf ("\nGB_mex_about3: all tests passed\n\n") ;

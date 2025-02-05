@@ -1,16 +1,14 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #pragma once
 
-#include "../graph/graphcontext.h"
-#include "../graph/entities/qg_node.h"
-#include "../graph/entities/qg_edge.h"
-#include "../arithmetic/arithmetic_expression.h"
 #include "ast.h"
+#include "../errors/errors.h"
+#include "../arithmetic/arithmetic_expression.h"
 
 struct AR_ExpNode;
 
@@ -45,7 +43,7 @@ typedef enum {
 } AST_Operator;
 
 typedef struct {
-	Attribute_ID *keys;
+	const char **keys;
 	struct AR_ExpNode **values;
 } PropertyMap;
 
@@ -59,16 +57,18 @@ typedef enum {
 // Key-value pair of an attribute ID and the value to be associated with it
 // TODO Consider replacing contents of PropertyMap (for ops like Create) with this
 typedef struct {
-	Attribute_ID id;
+	const char *attribute;
 	struct AR_ExpNode *exp;
+	UPDATE_MODE mode;
 } PropertySetCtx;
 
 // Context describing an update expression.
 typedef struct {
-	PropertySetCtx *properties; // properties to set
 	int record_idx;             // record offset this entity is stored at
-	UPDATE_MODE mode;           // Whether the entity's property map should be updated or replaced
-	const char *alias;          // Access-safe alias of the entity being updated
+	const char *alias;          // access-safe alias of the entity being updated
+	const char **add_labels;    // labels to add to the node
+	const char **remove_labels; // labels to add to the node
+	PropertySetCtx *properties; // properties to set
 } EntityUpdateEvalCtx;
 
 // Context describing a node in a CREATE or MERGE clause
@@ -84,19 +84,19 @@ typedef struct {
 	PropertyMap *properties;    // edge properties set
 } EdgeCreateCtx;
 
-// Context describing a relationship in a CREATE or MERGE clause
+// context describing a relationship in a CREATE or MERGE clause
 typedef struct {
-	int node_idx;               // node record index
-	int *labelsId;              // array of node labels id
-	const char *alias;          // node alias
-	const char **labels;        // node labels
-	PropertyMap *properties;    // node properties set
+	int node_idx;             // node record index
+	int *labelsId;            // array of node labels id
+	const char *alias;        // node alias
+	const char **labels;      // node labels
+	PropertyMap *properties;  // node properties set
 } NodeCreateCtx;
 
 AST_Operator AST_ConvertOperatorNode(const cypher_operator_t *op);
 
 // Convert a map of properties from the AST into a set of attribute ID keys and AR_ExpNode values.
-PropertyMap *PropertyMap_New(GraphContext *gc, const cypher_astnode_t *props);
+PropertyMap *PropertyMap_New(const cypher_astnode_t *props);
 
 // Clone NodeCreateCtx.
 NodeCreateCtx NodeCreateCtx_Clone(NodeCreateCtx ctx);
@@ -109,9 +109,16 @@ EdgeCreateCtx EdgeCreateCtx_Clone(EdgeCreateCtx ctx);
 
 void PropertyMap_Free(PropertyMap *map);
 
-EntityUpdateEvalCtx *UpdateCtx_New(UPDATE_MODE mode, uint prop_count, const char *alias);
+EntityUpdateEvalCtx *UpdateCtx_New(const char *alias);
 EntityUpdateEvalCtx *UpdateCtx_Clone(const EntityUpdateEvalCtx *ctx);
-void UpdateCtx_SetMode(EntityUpdateEvalCtx *ctx, UPDATE_MODE mode);
 void UpdateCtx_Clear(EntityUpdateEvalCtx *ctx);
 void UpdateCtx_Free(EntityUpdateEvalCtx *ctx);
 
+// collect aliases defined in a scope bounded by scope_start and scope_end
+void collect_aliases_in_scope
+(
+	const cypher_astnode_t *root,  // the query root
+	uint scope_start,              // start index of scope
+	uint scope_end,                // end index of scope
+	rax *identifiers               // rax to populate with identifiers
+);

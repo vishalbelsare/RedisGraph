@@ -2,7 +2,7 @@
 // GB_free_memory: wrapper for free
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -14,7 +14,6 @@
 
 #include "GB.h"
 
-GB_PUBLIC
 void GB_free_memory         // free memory, bypassing the free_pool
 (
     // input/output

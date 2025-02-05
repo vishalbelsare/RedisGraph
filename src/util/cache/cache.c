@@ -1,7 +1,7 @@
 /*
- * Copyright 2018 - 2020 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "cache.h"
@@ -89,8 +89,8 @@ void *Cache_GetValue(Cache *cache, const char *key) {
 
 	if(entry == raxNotFound) goto cleanup;
 
-	/* element is now the most recently used; update its LRU
-	 * note that multiple threads can be here simultaneously */
+	// element is now the most recently used; update its LRU
+	// note that multiple threads can be here simultaneously
 	cache->counter++;
 	entry->LRU = cache->counter;
 

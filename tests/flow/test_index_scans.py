@@ -1,12 +1,11 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
+from common import *
+from index_utils import *
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../../demo/social/')
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../../demo/social')
 import social_utils
 
 redis_graph = None
+
 
 class testIndexScanFlow():
     def __init__(self):
@@ -15,7 +14,7 @@ class testIndexScanFlow():
     def setUp(self):
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph(social_utils.graph_name, redis_con)
+        redis_graph = Graph(redis_con, social_utils.graph_name)
         social_utils.populate_graph(redis_con, redis_graph)
         self.build_indices()
 
@@ -23,9 +22,9 @@ class testIndexScanFlow():
         self.env.cmd('flushall')
 
     def build_indices(self):
-        global redis_graph
         redis_graph.query("CREATE INDEX ON :person(age)")
         redis_graph.query("CREATE INDEX ON :country(name)")
+        wait_for_indices_to_sync(redis_graph)
 
     # Validate that Cartesian products using index and label scans succeed
     def test01_cartesian_product_mixed_scans(self):
@@ -62,7 +61,7 @@ class testIndexScanFlow():
 
     # Validate that the appropriate bounds are respected when a Cartesian product uses the same index in two streams
     def test03_cartesian_product_reused_index(self):
-        redis_graph.query("CREATE INDEX ON :person(name)")
+        create_node_exact_match_index(redis_graph, 'person', 'name', sync=True)
         query = "MATCH (a:person {name: 'Omri Traub'}), (b:person) WHERE b.age <= 30 RETURN a.name, b.name ORDER BY a.name, b.name"
         plan = redis_graph.execution_plan(query)
         # The two streams should both use index scans
@@ -134,10 +133,19 @@ class testIndexScanFlow():
         result = redis_graph.query(query)
         self.env.assertEquals(result.result_set, expected_result)
 
+        # Validate the transformation of IN filters 1 not on attribute.
+        query = "MATCH (p:person) WHERE id(p) IN [18, 26] AND p.age IN [33, 34, 35] RETURN p.name ORDER BY p.age"
+        plan = redis_graph.execution_plan(query)
+        self.env.assertIn('Node By Index Scan', plan)
+
+        expected_result = [['Omri Traub'], ['Noam Nativ']]
+        result = redis_graph.query(query)
+        self.env.assertEquals(result.result_set, expected_result)
+
     # Validate index utilization when filtering on string fields with the `IN` keyword.
     def test05_test_in_operator_string_props(self):
         # Build an index on the name property.
-        redis_graph.query("CREATE INDEX ON :person(name)")
+        create_node_exact_match_index(redis_graph, 'person', 'name', sync=True)
         # Validate the transformation of IN to multiple OR expressions over string properties.
         query = "MATCH (p:person) WHERE p.name IN ['Gal Derriere', 'Lucy Yanfital'] RETURN p.name ORDER BY p.name"
         plan = redis_graph.execution_plan(query)
@@ -192,15 +200,14 @@ class testIndexScanFlow():
     # https://github.com/RedisGraph/RedisGraph/issues/696
     def test06_tag_separator(self):
         redis_con = self.env.getConnection()
-        redis_graph = Graph("G", redis_con)
+        redis_graph = Graph(redis_con, "G")
 
         # Create a single node with a long string property, introduce a comma as part of the string.
         query = """CREATE (:Node{value:"A ValuePartition is a pattern that describes a restricted set of classes from which a property can be associated. The parent class is used in restrictions, and the covering axiom means that only members of the subclasses may be used as values."})"""
         redis_graph.query(query)
 
         # Index property.
-        query = """CREATE INDEX ON :Node(value)"""
-        redis_graph.query(query)
+        create_node_exact_match_index(redis_graph, 'Node', 'value', sync=True)
 
         # Make sure node is returned by index scan.
         query = """MATCH (a:Node{value:"A ValuePartition is a pattern that describes a restricted set of classes from which a property can be associated. The parent class is used in restrictions, and the covering axiom means that only members of the subclasses may be used as values."}) RETURN a"""
@@ -211,7 +218,7 @@ class testIndexScanFlow():
 
     def test07_index_scan_and_id(self):
         redis_con = self.env.getConnection()
-        redis_graph = Graph("G", redis_con)
+        redis_graph = Graph(redis_con, "G")
         nodes=[]
         for i in range(10):
             node = Node(node_id=i, label='person', properties={'age':i})
@@ -219,8 +226,7 @@ class testIndexScanFlow():
             redis_graph.add_node(node)
             redis_graph.flush()
         
-        query = """CREATE INDEX ON :person(age)"""
-        query_result = redis_graph.query(query)
+        query_result = create_node_exact_match_index(redis_graph, 'person', 'age', sync=True)
         self.env.assertEqual(1, query_result.indices_created)
 
         query = """MATCH (n:person) WHERE id(n)>=7 AND n.age<9 RETURN n ORDER BY n.age"""
@@ -282,8 +288,7 @@ class testIndexScanFlow():
 
     def test13_point_index_scan(self):
         # create index
-        q = "CREATE INDEX ON :restaurant(location)"
-        redis_graph.query(q)
+        create_node_exact_match_index(redis_graph, 'restaurant', 'location', sync=True)
 
         # create restaurant
         q = "CREATE (:restaurant {location: point({latitude:30.27822306, longitude:-97.75134723})})"
@@ -361,12 +366,27 @@ class testIndexScanFlow():
         self.env.assertEqual(plan.count("Label Scan"), 1)
         self.env.assertEqual(plan.count("Node By Index Scan"), 0)
 
+        # Querying indexed properties using IN a with array with stop word.
+        query = "CREATE (:country { name: 'a' })"
+        redis_graph.query(query)
+
+        query = "MATCH (a:country) WHERE a.name IN ['a'] RETURN a.name ORDER BY a.name"
+        plan = redis_graph.execution_plan(query)
+        # One index scan should be performed.
+        self.env.assertEqual(plan.count("Node By Index Scan"), 1)
+        query_result = redis_graph.query(query)
+        expected_result = [['a']]
+        self.env.assertEquals(query_result.result_set, expected_result)
+
+        query = "MATCH (a:country { name: 'a' }) DELETE a"
+        redis_graph.query(query)
+
     # Test fulltext result scoring
     def test15_fulltext_result_scoring(self):
-        g = Graph('fulltext_scoring', self.env.getConnection())
+        g = Graph(self.env.getConnection(), 'fulltext_scoring')
 
         # create full-text index over label 'L', attribute 'v'
-        g.call_procedure('db.idx.fulltext.createNodeIndex', 'L', 'v')
+        create_fulltext_index(g, 'L', 'v', sync=True)
 
         # introduce 2 nodes
         g.query("create (:L {v:'hello world hello'})")
@@ -478,6 +498,27 @@ class testIndexScanFlow():
         expected_result = [["Noam Nativ"]]
         self.env.assertEquals(query_result.result_set, expected_result)
 
+        # check that the value is evaluated before sending it to index query
+        q = """MATCH (b:person)
+        WHERE b.age = rand()*0 + 32
+        RETURN b.name
+        ORDER BY b.name"""
+        plan = redis_graph.execution_plan(q)
+        self.env.assertIn('Node By Index Scan', plan)
+        query_result = redis_graph.query(q)
+        expected_result = [['Ailon Velger'], ['Alon Fital'], ['Ori Laslo'], ['Roi Lipman'], ['Tal Doron']]
+        self.env.assertEquals(query_result.result_set, expected_result)
+
+        # check that the value is evaluated before sending it to index query
+        q = """MATCH (a:person)
+        WHERE a.age = toInteger('32')
+        RETURN a.name
+        ORDER BY a.name"""
+        plan = redis_graph.execution_plan(q)
+        self.env.assertIn('Node By Index Scan', plan)
+        query_result = redis_graph.query(q)
+        self.env.assertEquals(query_result.result_set, expected_result)
+
         # TODO: The following query uses the "Value Hash Join" where it would be
         # better to use "Index Scan"
         q = """UNWIND range(33, 37) AS x MATCH (a:person {age:x}), (b:person {age:x}) RETURN a.name, b.name ORDER BY a.name, b.name"""
@@ -518,9 +559,9 @@ class testIndexScanFlow():
 
     # test for https://github.com/RedisGraph/RedisGraph/issues/1980
     def test18_index_scan_inside_apply(self):
-        redis_graph = Graph('g', self.env.getConnection())
+        redis_graph = Graph(self.env.getConnection(), 'g')
 
-        redis_graph.query("CREATE INDEX ON :L1(id)")
+        create_node_exact_match_index(redis_graph, 'L1', 'id', sync=True)
         redis_graph.query("UNWIND range(1, 5) AS v CREATE (:L1 {id: v})")
         result = redis_graph.query("UNWIND range(1, 5) AS id OPTIONAL MATCH (u:L1{id: 5}) RETURN u.id")
 
@@ -528,10 +569,10 @@ class testIndexScanFlow():
         self.env.assertEquals(result.result_set, expected_result)
 
     def test19_index_scan_numeric_accuracy(self):
-        redis_graph = Graph('large_index_values', self.env.getConnection())
+        redis_graph = Graph(self.env.getConnection(), 'large_index_values')
 
-        redis_graph.query("CREATE INDEX ON :L1(id)")
-        redis_graph.query("CREATE INDEX ON :L2(id1, id2)")
+        create_node_exact_match_index(redis_graph, 'L1', 'id', sync=True)
+        create_node_exact_match_index(redis_graph, 'L2', 'id1', 'id2', sync=True)
         redis_graph.query("UNWIND range(1, 5) AS v CREATE (:L1 {id: 990000000262240068 + v})")
         redis_graph.query("UNWIND range(1, 5) AS v CREATE (:L2 {id1: 990000000262240068 + v, id2: 990000000262240068 - v})")
 
@@ -570,3 +611,102 @@ class testIndexScanFlow():
         expected_result = [[990000000262240069, 990000000262240067]]
         self.env.assertEquals(result.result_set, expected_result)
 
+    def test20_index_scan_stopwords(self):
+        redis_graph = Graph(self.env.getConnection(), 'stopword')
+
+        #-----------------------------------------------------------------------
+        # create indices
+        #-----------------------------------------------------------------------
+
+        # create exact match index over User id
+        create_node_exact_match_index(redis_graph, 'User', 'id', sync=True)
+        # create a fulltext index over User id
+        create_fulltext_index(redis_graph, 'User', 'id', sync=True)
+
+        #-----------------------------------------------------------------------
+        # create node
+        #-----------------------------------------------------------------------
+
+        # create a User node with a RediSearch stopword as the id attribute
+        user = Node(label='User', properties={'id': 'not'})
+        redis_graph.add_node(user)
+        redis_graph.commit()
+
+        #-----------------------------------------------------------------------
+        # query indices
+        #-----------------------------------------------------------------------
+
+        # query exact match index for user
+        # expecting node to return as stopwords are not enforced
+        result = redis_graph.query("MATCH (u:User {id: 'not'}) RETURN u")
+        self.env.assertEquals(result.result_set[0][0], user)
+
+        # query fulltext index for user
+        # expecting no results as stopwords are enforced
+        result = redis_graph.query("CALL db.idx.fulltext.queryNodes('User', 'stop')")
+        self.env.assertEquals(result.result_set, [])
+    
+    def test21_invalid_distance_query(self):
+        redis_graph = Graph(self.env.getConnection(), 'invalid_distance')
+
+        # create exact match index over User id
+        create_node_exact_match_index(redis_graph, 'User', 'loc', sync=True)
+        
+        # create a node
+        redis_graph.query("CREATE (:User {loc:point({latitude:40.4, longitude:30.3})})")
+
+        # invalid query
+        try:
+            redis_graph.query("MATCH (u:User) WHERE distance(point({latitude:40.5, longitude: 30.4}, u.loc)) < 20000 RETURN u")
+            self.env.assertTrue(False)
+        except redis.exceptions.ResponseError as e:
+            self.env.assertIn("Received 1 arguments to function 'distance', expected at least 2", str(e))
+
+    def test_22_pickup_on_index_creation(self):
+        g = Graph(self.env.getConnection(), 'late_index_creation')
+
+        # create graph
+        g.query("RETURN 1")
+
+        # issue query which has to potential to utilize an index
+        # this query is going to be cached
+        q = "MATCH (n:N) WHERE n.v = 1 RETURN n"
+        plan = g.execution_plan(q)
+
+        # expecting no index scan operation, as we've yet to create an index
+        self.env.assertNotIn('Node By Index Scan', plan)
+
+        # create an index
+        resultset = create_node_exact_match_index(g, 'N', 'v', sync=True)
+        self.env.assertEqual(1, resultset.indices_created)
+
+        # re-issue the same query
+        q = "MATCH (n:N) WHERE n.v = 1 RETURN n"
+        plan = g.execution_plan(q)
+
+        # expecting an index scan operation
+        self.env.assertIn('Node By Index Scan', plan)
+
+    def test_23_do_not_utilize_index_(self):
+        g = Graph(self.env.getConnection(), 'late_index_creation')
+
+        # create graph
+        g.query("RETURN 1")
+
+        # issue query which not utilize an index
+        q = "MATCH (n:N) WHERE id(n) IN [0] RETURN n"
+        plan = g.execution_plan(q)
+
+        # expecting no index scan operation
+        self.env.assertNotIn('Node By Index Scan', plan)
+
+        # create an index
+        resultset = create_node_exact_match_index(g, 'N', 'v', sync=True)
+        self.env.assertEqual(1, resultset.indices_created)
+
+        # re-issue the same query
+        q = "MATCH (n:N) WHERE id(n) IN [0] RETURN n"
+        plan = g.execution_plan(q)
+
+        # expecting an no index scan operation
+        self.env.assertNotIn('Node By Index Scan', plan)

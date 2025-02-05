@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include <pthread.h>
 #include "RG.h"
@@ -135,16 +135,17 @@ void ThreadPools_Resume
 	thpool_resume(_writers_thpool);
 }
 
-// add task for reader thread
+// adds a read task
 int ThreadPools_AddWorkReader
 (
-	void (*function_p)(void *),
-	void *arg_p
+	void (*function_p)(void *),  // function to run
+	void *arg_p,                 // function arguments
+	int force                    // true will add task even if internal queue is full
 ) {
 	ASSERT(_readers_thpool != NULL);
 
 	// make sure there's enough room in thread pool queue
-	if(thpool_queue_full(_readers_thpool)) return THPOOL_QUEUE_FULL;
+	if(!force && thpool_queue_full(_readers_thpool)) return THPOOL_QUEUE_FULL;
 
 	return thpool_add_work(_readers_thpool, function_p, arg_p);
 }
@@ -153,12 +154,13 @@ int ThreadPools_AddWorkReader
 int ThreadPools_AddWorkWriter
 (
 	void (*function_p)(void *),
-	void *arg_p
+	void *arg_p,
+	int force
 ) {
 	ASSERT(_writers_thpool != NULL);
 
 	// make sure there's enough room in thread pool queue
-	if(thpool_queue_full(_writers_thpool)) return THPOOL_QUEUE_FULL;
+	if(thpool_queue_full(_writers_thpool) && !force) return THPOOL_QUEUE_FULL;
 
 	return thpool_add_work(_writers_thpool, function_p, arg_p);
 }
@@ -166,6 +168,42 @@ int ThreadPools_AddWorkWriter
 void ThreadPools_SetMaxPendingWork(uint64_t val) {
 	if(_readers_thpool != NULL) thpool_set_jobqueue_cap(_readers_thpool, val);
 	if(_writers_thpool != NULL) thpool_set_jobqueue_cap(_writers_thpool, val);
+}
+
+// returns a list of queued tasks that match the given handler
+// caller must free the returned list
+void **ThreadPools_GetTasksByHandler
+(
+	void (*handler)(void *),  // task handler to match
+	void (*match)(void *),    // [optional] function to invoke on each match
+	uint32_t *n               // number of tasks returned
+) {
+	// validations
+	ASSERT(handler         != NULL);
+	ASSERT(_readers_thpool != NULL);
+	ASSERT(_writers_thpool != NULL);
+
+	// cap number of read tasks
+	uint32_t r_task_count = (thpool_get_jobqueue_len(_readers_thpool) > 1000)
+		? 1000
+		: thpool_get_jobqueue_len(_readers_thpool);
+
+	// cap number of write tasks
+	uint32_t w_task_count = (thpool_get_jobqueue_len(_writers_thpool) > 1000)
+		? 1000
+		: thpool_get_jobqueue_len(_writers_thpool);
+
+	void **tasks = malloc(sizeof(void *) * (r_task_count + w_task_count));
+
+	// collect tasks from readers and writers
+	thpool_get_tasks(_readers_thpool, tasks, &r_task_count, handler, match);
+	thpool_get_tasks(_writers_thpool, tasks + r_task_count, &w_task_count,
+			handler, match);
+
+	// update number of tasks
+	*n = r_task_count + w_task_count;
+
+	return tasks;
 }
 
 void ThreadPools_Destroy
@@ -178,3 +216,4 @@ void ThreadPools_Destroy
 	thpool_destroy(_readers_thpool);
 	thpool_destroy(_writers_thpool);
 }
+

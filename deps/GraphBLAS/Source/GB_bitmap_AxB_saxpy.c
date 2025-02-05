@@ -2,18 +2,19 @@
 // GB_bitmap_AxB_saxpy: compute C=A*B, C<M>=A*B, or C<!M>=A*B; C bitmap
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 #include "GB_bitmap_AxB_saxpy.h"
+#include "GB_AxB_saxpy_generic.h"
 #include "GB_AxB__include1.h"
-#ifndef GBCOMPACT
+#ifndef GBCUDA_DEV
 #include "GB_AxB__include2.h"
 #endif
 
-#define GB_FREE_ALL GB_phbix_free (C) ;
+#define GB_FREE_ALL GB_phybix_free (C) ;
 
 //------------------------------------------------------------------------------
 // GB_bitmap_AxB_saxpy: compute C=A*B, C<M>=A*B, or C<!M>=A*B
@@ -22,7 +23,6 @@
 // TODO: also pass in the user's C and the accum operator, and done_in_place,
 // like GB_AxB_dot4.
 
-GB_PUBLIC                           // for testing only
 GrB_Info GB_bitmap_AxB_saxpy        // C = A*B where C is bitmap
 (
     GrB_Matrix C,                   // output matrix, static header
@@ -45,7 +45,7 @@ GrB_Info GB_bitmap_AxB_saxpy        // C = A*B where C is bitmap
 
     GrB_Info info ;
 
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
 
     ASSERT_MATRIX_OK_OR_NULL (M, "M for bitmap saxpy A*B", GB0) ;
     ASSERT (!GB_PENDING (M)) ;
@@ -79,7 +79,7 @@ GrB_Info GB_bitmap_AxB_saxpy        // C = A*B where C is bitmap
     int64_t cnzmax = 1 ;
     (void) GB_int64_multiply ((GrB_Index *) &cnzmax, A->vlen, B->vdim) ;
     // set C->iso = C_iso   OK
-    GB_OK (GB_new_bix (&C, true, // static header
+    GB_OK (GB_new_bix (&C, // existing header
         ctype, A->vlen, B->vdim, GB_Ap_null, true, GxB_BITMAP, true,
         GB_HYPER_SWITCH_DEFAULT, -1, cnzmax, true, C_iso, Context)) ;
     C->magic = GB_MAGIC ;
@@ -89,8 +89,8 @@ GrB_Info GB_bitmap_AxB_saxpy        // C = A*B where C is bitmap
     //--------------------------------------------------------------------------
 
     GrB_BinaryOp mult = semiring->multiply ;
-    GrB_Monoid add = semiring->add ;
-    ASSERT (mult->ztype == add->op->ztype) ;
+//  GrB_Monoid add = semiring->add ;
+    ASSERT (mult->ztype == semiring->add->op->ztype) ;
     bool A_is_pattern, B_is_pattern ;
     GB_binop_pattern (&A_is_pattern, &B_is_pattern, flipxy, mult->opcode) ;
 
@@ -121,7 +121,7 @@ GrB_Info GB_bitmap_AxB_saxpy        // C = A*B where C is bitmap
         GBURBLE ("(bitmap saxpy) ") ;
         bool done = false ;
 
-        #ifndef GBCOMPACT
+        #ifndef GBCUDA_DEV
 
             //------------------------------------------------------------------
             // define the worker for the switch factory

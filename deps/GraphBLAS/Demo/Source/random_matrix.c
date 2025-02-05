@@ -2,7 +2,7 @@
 // GraphBLAS/Demo/Source/Source/random_matrix.c: create a random matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -19,15 +19,12 @@
     if (J != NULL) free (J) ;       \
     if (X != NULL) free (X) ;
 
-#undef GB_PUBLIC
-#define GB_LIBRARY
 #include "graphblas_demos.h"
 
 //------------------------------------------------------------------------------
 // create a random matrix
 //------------------------------------------------------------------------------
 
-GB_PUBLIC
 GrB_Info random_matrix      // create a random double-precision matrix
 (
     GrB_Matrix *A_output,   // handle of matrix to create

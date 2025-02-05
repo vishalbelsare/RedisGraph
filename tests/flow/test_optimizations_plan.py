@@ -1,14 +1,9 @@
-from base import FlowTestsBase
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
+from common import *
 
 graph = None
 redis_con = None
 people = ["Roi", "Alon", "Ailon", "Boaz"]
-
+GRAPH_ID = "g"
 
 class testOptimizationsPlan(FlowTestsBase):
     def __init__(self):
@@ -16,7 +11,7 @@ class testOptimizationsPlan(FlowTestsBase):
         global graph
         global redis_con
         redis_con = self.env.getConnection()
-        graph = Graph("g", redis_con)
+        graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -359,7 +354,7 @@ class testOptimizationsPlan(FlowTestsBase):
     # their batch size to match the current limit.
     def test23_limit_propagation(self):
         graph_id = "limit-propagation"
-        graph = Graph(graph_id, redis_con)
+        graph = Graph(redis_con, graph_id)
 
         # create graph
         query = """UNWIND range(0, 64) AS x CREATE ()-[:R]->()-[:R]->()"""
@@ -431,3 +426,119 @@ class testOptimizationsPlan(FlowTestsBase):
                     [0, 3],
                     [0, 3]]
         self.env.assertEqual(resultset, expected)
+
+    # Labels' order should be replaced properly.
+    def test28_optimize_label_scan_switch_labels(self):
+        self.env.flush()
+
+        # Create three nodes with label N, two with label M, one of them in common.
+        graph.query("CREATE (:N), (:N), (:N:M), (:M)")
+
+        # Make sure that the M is traversed first.
+        query = "MATCH (n:N:M) RETURN n"
+        plan = graph.execution_plan(query)
+        self.env.assertIn("Node By Label Scan | (n:M)", plan)
+
+        # Make sure multi-label is enforced, we're expecting only the node with
+        # both :N and :M to be returned.
+        res = graph.query(query)
+        self.env.assertEquals(len(res.result_set), 1)
+        self.env.assertEquals(res.result_set[0][0], Node(alias='n', label=['N', 'M']))
+
+    # in cases where a referred label doesn't exist, the UNKNOW_LABEL_ID 
+    # is being cached. Once the label is created we want to make sure that 
+    # the UNKNOW_LABEL_ID is replaced with the actual label ID. this test 
+    # illustrates this scenario by traversing from a non-existing label 
+    # (populating our execution-plan cache) which afterwards is being 
+    # created. once created we want to make sure the correct label ID is used.
+    def test29_optimize_label_scan_cached_label_id(self):
+        self.env.flush()
+
+        # Create node with label Q
+        graph.query("CREATE (n:Q)")
+
+        # Make sure N is traversed first, as it has no nodes. (none existing)
+        plan = graph.execution_plan("MATCH (n:N:Q) RETURN n")
+        self.env.assertIn("Node By Label Scan | (n:N)", plan)
+
+        # Add label `N` to only node in the graph
+        query = """MATCH (n:Q) SET n:N"""
+        graph.query(query)
+
+        # Make sure #nodes labeled as Q > #nodes labeled as N
+        graph.query("CREATE (n:Q)")
+
+        # Make sure N is traversed first, N is now associated with an ID
+        # |N| < |Q|
+        query = """MATCH (n:N:Q) RETURN count(n)"""
+        res = graph.query(query)
+        self.env.assertEquals(res.result_set, [[1]])
+
+        plan = graph.execution_plan(query)
+        self.env.assertIn("Node By Label Scan | (n:N)", plan)
+
+    # mandatory match labels should not be replaced with optional ones in
+    # optimize-label-scan
+    def test30_optimize_mandatory_labels_order_only(self):
+        # clean db
+        self.env.flush()
+        graph = Graph(self.env.getConnection(), GRAPH_ID)
+
+        # create a node with label N
+        query = """CREATE (n:N {v: 1})"""
+        graph.query(query)
+
+        query = """MATCH (n:N) OPTIONAL MATCH (n:Q) RETURN n.v"""
+        plan = graph.execution_plan(query)
+
+        # make sure N is traversed first, even though there are no nodes with
+        # label Q
+        self.env.assertIn("Node By Label Scan | (n:N)", plan)
+        res = graph.query(query)
+        self.env.assertEquals(res.result_set, [[1]])
+
+        # create nodes so there are two nodes with label N, and one with label Q.
+        graph.query("CREATE (:N:Q {v: 2})")
+
+        # The most tempting label to start traversing from is Z, as there are
+        # no nodes of label Z, but it is optional, so the second most tempting
+        # label (Q) must be traversed first (order swapped with N)
+        queries = ["MATCH (n:N) MATCH (n:Q) OPTIONAL MATCH (n:Z) RETURN n",
+                   "MATCH (n:Q) MATCH (n:N) OPTIONAL MATCH (n:Z) RETURN n"]
+
+        for q in queries:
+            plan = graph.execution_plan(q)
+            self.env.assertIn("Node By Label Scan | (n:Q)", plan)
+            self.env.assertIn("Conditional Traverse | (n:N)->(n:N)", plan)
+
+            # assert correctness of the results
+            res = graph.query(q)
+            self.env.assertEquals(len(res.result_set), 1)
+            self.env.assertEquals(res.result_set[0][0], Node(label=['N', 'Q'], properties={'v': 2}))
+
+    def test31_optimize_optional_labels(self):
+        """Tests that the optimization of the Label-Scan op works on optional
+        labels properly"""
+
+        # clean db
+        self.env.flush()
+        graph = Graph(self.env.getConnection(), GRAPH_ID)
+
+        # create a node with label `N`
+        graph.query("CREATE (:N)")
+
+        plan = graph.execution_plan("OPTIONAL MATCH (n:N:M) RETURN n")
+
+        # make sure `M` is traversed first, as it has less labels
+        self.env.assertIn("Node By Label Scan | (n:M)", plan)
+        self.env.assertIn("Conditional Traverse | (n:N)->(n:N)", plan)
+
+        # make sure that labels from different `OPTIONAL MATCH` clauses are not
+        # "mixed" in Label-Scan optimization
+        query = "OPTIONAL MATCH (n:N) OPTIONAL MATCH (n:M) RETURN n"
+        plan = graph.execution_plan(query)
+
+        # make sure `N` is the first label traversed, even though there are less
+        # labels with label `M`
+        self.env.assertIn("Node By Label Scan | (n:N)", plan)
+        self.env.assertIn("Conditional Traverse | (n:M)->(n:M)", plan)

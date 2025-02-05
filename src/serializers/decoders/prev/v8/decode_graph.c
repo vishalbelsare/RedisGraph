@@ -1,24 +1,23 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "decode_v8.h"
 
 static GraphContext *_GetOrCreateGraphContext(char *graph_name) {
-	GraphContext *gc = GraphContext_GetRegisteredGraphContext(graph_name);
+	GraphContext *gc = GraphContext_UnsafeGetGraphContext(graph_name);
 	if(!gc) {
-		// New graph is being decoded. Inform the module and create new graph context.
-		gc = GraphContext_New(graph_name, GRAPH_DEFAULT_NODE_CAP, GRAPH_DEFAULT_EDGE_CAP);
-		// While loading the graph, minimize matrix realloc and synchronization calls.
+		// new graph is being decoded
+		// inform the module and create new graph context
+		gc = GraphContext_New(graph_name);
+		// while loading the graph
+		// minimize matrix realloc and synchronization calls
 		Graph_SetMatrixPolicy(gc->g, SYNC_POLICY_RESIZE);
 	}
-	// Free the name string, as it either not in used or copied.
+	// free the name string, as it either not in used or copied
 	RedisModule_Free(graph_name);
-
-	// Set the GraphCtx in thread-local storage.
-	QueryCtx_SetGraphCtx(gc);
 
 	return gc;
 }
@@ -27,8 +26,8 @@ static GraphContext *_GetOrCreateGraphContext(char *graph_name) {
  * of data blocks and matrices since they are all in the appropriate size. */
 static void _InitGraphDataStructure(Graph *g, uint64_t node_count, uint64_t edge_count,
 									uint64_t label_count,  uint64_t relation_count) {
-	DataBlock_Accommodate(g->nodes, node_count);
-	DataBlock_Accommodate(g->edges, edge_count);
+	Graph_AllocateNodes(g, node_count);
+	Graph_AllocateEdges(g, edge_count);
 	for(uint64_t i = 0; i < label_count; i++) Graph_AddLabel(g);
 	for(uint64_t i = 0; i < relation_count; i++) Graph_AddRelationType(g);
 	// flush all matrices, guarantee matrix dimensions matches graph's nodes count
@@ -168,10 +167,15 @@ GraphContext *RdbLoadGraphContext_v8(RedisModuleIO *rdb) {
 	if(GraphDecodeContext_Finished(gc->decoding_context)) {
 		Graph *g = gc->g;
 
+		// set the node label matrix
+		Serializer_Graph_SetNodeLabels(g);
+
+		Graph_ApplyAllPending(g, true);
+
 		// revert to default synchronization behavior
 		Graph_SetMatrixPolicy(g, SYNC_POLICY_FLUSH_RESIZE);
-		Graph_ApplyAllPending(g, true);
-		
+
+		uint rel_count   = Graph_RelationTypeCount(g);
 		uint label_count = Graph_LabelTypeCount(g);
 		// update the node statistics
 		// index the nodes
@@ -181,9 +185,32 @@ GraphContext *RdbLoadGraphContext_v8(RedisModuleIO *rdb) {
 			RG_Matrix_nvals(&nvals, L);
 			GraphStatistics_IncNodeCount(&g->stats, i, nvals);
 
+			Index idx = NULL;
 			Schema *s = GraphContext_GetSchemaByID(gc, i, SCHEMA_NODE);
-			if(s->index) Index_Construct(s->index);
-			if(s->fulltextIdx) Index_Construct(s->fulltextIdx);
+			idx = PENDING_EXACTMATCH_IDX(s);
+			if(idx != NULL) {
+				Index_Populate(idx, g);
+				Index_Enable(idx);
+				Schema_ActivateIndex(s, idx);
+			}
+
+			idx = PENDING_FULLTEXT_IDX(s);
+			if(idx != NULL) {
+				Index_Populate(idx, g);
+				Index_Enable(idx);
+				Schema_ActivateIndex(s, idx);
+			}
+		}
+
+		// enable all edge indices
+		for(uint i = 0; i < rel_count; i++) {
+			Schema *s = GraphContext_GetSchemaByID(gc, i, SCHEMA_EDGE);
+			Index idx = PENDING_EXACTMATCH_IDX(s);
+			if(idx != NULL) {
+				Index_Populate(idx, g);
+				Index_Enable(idx);
+				Schema_ActivateIndex(s, idx);
+			}
 		}
 
 		// make sure graph doesn't contains may pending changes
@@ -194,9 +221,6 @@ GraphContext *RdbLoadGraphContext_v8(RedisModuleIO *rdb) {
 		RedisModuleCtx *ctx = RedisModule_GetContextFromIO(rdb);
 		RedisModule_Log(ctx, "notice", "Done decoding graph %s", GraphContext_GetName(gc));
 	}
-	
-	// release thread-local variables
-	QueryCtx_Free();
 
 	return gc;
 }

@@ -30,18 +30,24 @@
 
 namespace jit {
 
+std::string get_user_home_cache_dir();
+std::string get_user_graphblas_source_path();
 std::string getCacheDir(void);
 
-        template <typename Tv>
+template <typename Tv>
 using named_prog = std::pair<std::string, std::shared_ptr<Tv>>;
 
 // Basic file descriptor to enable file manipulation with caching 
-class File_Desc 
+class File_Desc
 {
 public:
-   void open_file();
-   void close_file();
-   std::string macrofy() const;
+   virtual void open( const char *path_and_file, const char *mode) {}
+   virtual void close() {}
+   virtual void macrofy() {
+
+       printf("Uh oh. this isn't good\n");
+
+   }
    std::string filename;
 };
 
@@ -58,7 +64,7 @@ public:
  * The default cache directory `~/.GraphBLAS_kernel_cache`.
  **/
 
-class GBJitCache: public File_Desc
+class GBJitCache
 {
 public:
 
@@ -85,7 +91,7 @@ public:
      * @param file_desc [in] object representing file:  open, macrofy, close 
      * @return  string name of file, or 'error' if not able to create file  
      *---------------------------------------------------------------------------**/
-    std::string getFile( File_Desc const& file_obj );
+    std::string getFile( File_Desc & file_obj );
 
     /**---------------------------------------------------------------------------*
      * @brief Get the Kernel Instantiation object
@@ -148,7 +154,7 @@ private:
 private:
     /**---------------------------------------------------------------------------*
      * @brief Class to allow process wise exclusive access to cache files
-     * 
+     *
      *---------------------------------------------------------------------------**/
     class cacheFile
     {
@@ -192,46 +198,55 @@ private:
 
 private:
 
-    template <typename T>
-    named_prog<T> getCachedFile( 
-        File_Desc const &file_object,
+    template <typename T, typename FileDescType>
+    named_prog<T> getCachedFile(
+            FileDescType &file_object,
         umap_str_shptr<T>& map )
     {
-     
+
+//        printf("INside get cached file\n");
         std::string name = file_object.filename;
+
         // Find memory cached T object
         auto it = map.find(name);
         if ( it != map.end()) {
-            std::cout<<"found memory-cached file "<<name<<std::endl;
+//            std::cout<<"found memory-cached file "<<name<<std::endl;
             return std::make_pair(name, it->second);
         }
         else { // Find file cached T object
             bool successful_read = false;
             std::string serialized;
-            #if defined(JITIFY_USE_CACHE)
-                std::string cache_dir = getCacheDir();
-                if (not cache_dir.empty() ) {
-                    std::string file_name = cache_dir + name;
-                    //std::cout<<"looking for prog in file "<<file_name<<std::endl;
-
-                    cacheFile file{file_name};
-                    serialized = file.read_file();
-                    successful_read = file.is_read_successful();
+            std::string cache_dir = getCacheDir();
+            std::string file_name = cache_dir + "/" + name;
+            if (not cache_dir.empty() ) {
+                // TODO: Use OS-agnostic path separator here
+//                std::cout<<"looking for prog in file "<<file_name<<std::endl;
+                file_object.open(file_name.c_str(), "r");
+                cacheFile file{file_name};
+                serialized = file.read_file();
+                successful_read = file.is_read_successful();
+//                std::cout << "successful_read: " << successful_read << std::endl;
+                if(successful_read) {
+                    file_object.close();
+//                    std::cout << "Just closed" << std::endl;
                 }
-            #endif
+            }
             if (not successful_read) {
                 // JIT compile and write to file if possible
-                serialized = file_object.macrofy();
-                std::cout<<" got fresh content for "<<name<<std::endl;
+//                std::cout << "not successful read. macrofying" << std::endl;
+                file_object.open(file_name.c_str(), "w");
+                file_object.macrofy();
+//                std::cout<<" got fresh content for "<<name<<std::endl;
+                file_object.close();
 
-                #if defined(JITIFY_USE_CACHE)
-                    if (not cache_dir.empty()) {
-                        std::string file_name = cache_dir + name;
-                        std::cout<<"writing in file "<<file_name<<std::endl;
-                        cacheFile file{file_name};
-                        file.write(serialized);
-                    }
-                #endif
+                if (not cache_dir.empty()) {
+//                    std::cout<<"writing in file "<<file_name<<std::endl;
+                    cacheFile file{file_name};
+
+                    cacheFile macrofied{name};
+                    serialized = macrofied.read_file();
+                    file.write(serialized);
+                }
             }
             // Add deserialized T to cache and return
             map[name] = std::make_shared<std::string>(serialized);
@@ -254,7 +269,7 @@ private:
         // Find memory cached T object
         auto it = map.find(name);
         if ( it != map.end()) {
-            std::cout<<"found memory-cached prog "<<name<<std::endl;
+//            std::cout<<"found memory-cached prog "<<name<<std::endl;
             return std::make_pair(name, it->second);
         }
         else { // Find file cached T object
@@ -263,7 +278,8 @@ private:
             #if defined(JITIFY_USE_CACHE)
                 std::string cache_dir = getCacheDir();
                 if (not cache_dir.empty() ) {
-                    std::string file_name = cache_dir + name;
+                    // TODO: Use OS-agnostic path separator
+                    std::string file_name = cache_dir + "/" + name;
                     //std::cout<<"looking for prog in file "<<file_name<<std::endl;
 
                     cacheFile file{file_name};
@@ -273,13 +289,17 @@ private:
             #endif
             if (not successful_read) {
                 // JIT compile and write to file if possible
-                serialized = func().serialize();
-                std::cout<<" compiled serialized prog "<<name<<std::endl;
+//                    std::cout << "compiling now" << std::endl;
+                auto f = func();
+
+//                    std::cout << "completed func()" << std::endl;
+                serialized = f.serialize();
+//                std::cout<<" compiled serialized prog "<<name<<std::endl;
 
                 #if defined(JITIFY_USE_CACHE)
                     if (not cache_dir.empty()) {
-                        std::string file_name = cache_dir + name;
-                        std::cout<<"writing prog in file "<<file_name<<std::endl;
+                        std::string file_name = cache_dir + "/" + name;
+//                        std::cout<<"writing prog in file "<<file_name<<std::endl;
                         cacheFile file{file_name};
                         file.write(serialized);
                     }

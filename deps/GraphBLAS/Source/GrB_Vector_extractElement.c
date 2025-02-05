@@ -2,7 +2,7 @@
 // GrB_Vector_extractElement: extract a single entry from a vector
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -194,5 +194,8 @@ GrB_Info GrB_Vector_extractElement_Scalar   // S = V(i,j)
 #define GB_EXTRACT_ELEMENT GrB_Vector_extractElement_UDT
 #define GB_XTYPE void
 #define GB_XCODE GB_UDT_code
+#include "GB_Vector_extractElement.c"
+
+#define GB_EXTRACT_ELEMENT GxB_Vector_isStoredElement
 #include "GB_Vector_extractElement.c"
 

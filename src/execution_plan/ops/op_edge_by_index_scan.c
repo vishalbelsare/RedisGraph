@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "op_edge_by_index_scan.h"
 #include "../../query_ctx.h"
@@ -153,10 +153,10 @@ static inline void _UpdateRecord
 	int res;
 	UNUSED(res);
 	
-	Edge  e     = GE_NEW_LABELED_EDGE(op->edge->reltypes[0], op->edge->reltypeIDs[0]);
+	Edge e = GE_NEW_LABELED_EDGE(op->edge->reltypes[0], op->edge->reltypeIDs[0]);
 
-	EntityID  src_id   =  edge_key->src_id;
-	EntityID  dest_id  =  edge_key->dest_id;
+	e.src_id   =  edge_key->src_id;
+	e.dest_id  =  edge_key->dest_id;
 	EntityID  edge_id  =  edge_key->edge_id;
 
 	res = Graph_GetEdge(op->g, edge_id, &e);
@@ -164,24 +164,16 @@ static inline void _UpdateRecord
 
 	if(!op->srcAware) {
 		Node src = GE_NEW_NODE();
-		res = Graph_GetNode(op->g, src_id, &src);
+		res = Graph_GetNode(op->g, e.src_id, &src);
 		ASSERT(res != 0);
 		Record_AddNode(r, op->srcRecIdx, src);
-		Edge_SetSrcNode(&e, &src);
-	} else {
-		Node *src = Record_GetNode(r,  op->srcRecIdx);
-		Edge_SetSrcNode(&e, src);
 	}
 
 	if(!op->destAware) {
 		Node dest = GE_NEW_NODE();
-		res = Graph_GetNode(op->g, dest_id, &dest);
+		res = Graph_GetNode(op->g, e.dest_id, &dest);
 		ASSERT(res != 0);
 		Record_AddNode(r, op->destRecIdx, dest);
-		Edge_SetDestNode(&e, &dest);
-	} else {
-		Node *dest = Record_GetNode(r,  op->destRecIdx);
-		Edge_SetDestNode(&e, dest);
 	}
 
 	Record_AddEdge(r, op->edgeRecIdx, e);
@@ -350,15 +342,14 @@ static Record EdgeIndexScanConsume
 static OpResult EdgeIndexScanReset(OpBase *opBase) {
 	OpEdgeIndexScan *op = (OpEdgeIndexScan *)opBase;
 
-	if(op->rebuild_index_query) {
+	if(op->iter) {
 		RediSearch_ResultsIteratorFree(op->iter);
 		op->iter = NULL;
-		if(op->unresolved_filters) {
-			FilterTree_Free(op->unresolved_filters);
-			op->unresolved_filters = NULL;
-		}
-	} else {
-		RediSearch_ResultsIteratorReset(op->iter);
+	}
+
+	if(op->unresolved_filters) {
+		FilterTree_Free(op->unresolved_filters);
+		op->unresolved_filters = NULL;
 	}
 
 	return OP_OK;

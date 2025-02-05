@@ -2,14 +2,13 @@
 // GB_UnaryOp_check: check and print a unary operator
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 #include "GB.h"
 
-GB_PUBLIC
 GrB_Info GB_UnaryOp_check   // check a GraphBLAS unary operator
 (
     const GrB_UnaryOp op,   // GraphBLAS operator to print and check
@@ -78,6 +77,11 @@ GrB_Info GB_UnaryOp_check   // check a GraphBLAS unary operator
             GBPR0 ("    UnaryOp has an invalid xtype\n") ;
             return (GrB_INVALID_OBJECT) ;
         }
+    }
+
+    if (op->defn != NULL)
+    { 
+        GBPR0 ("%s\n", op->defn) ;
     }
 
     return (GrB_SUCCESS) ;

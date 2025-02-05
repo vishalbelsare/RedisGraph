@@ -2,7 +2,7 @@
 // GB_subref_phase3: C=A(I,J)
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -12,6 +12,7 @@
 
 #include "GB_subref.h"
 #include "GB_sort.h"
+#include "GB_unused.h"
 
 GrB_Info GB_subref_phase3   // C=A(I,J)
 (
@@ -55,7 +56,7 @@ GrB_Info GB_subref_phase3   // C=A(I,J)
     // check inputs
     //--------------------------------------------------------------------------
 
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
     ASSERT (Cp_handle != NULL) ;
     ASSERT (Ch_handle != NULL) ;
     const int64_t *restrict Ch = (*Ch_handle) ;
@@ -75,7 +76,7 @@ GrB_Info GB_subref_phase3   // C=A(I,J)
     // allocate the result C (but do not allocate C->p or C->h)
     int sparsity = C_is_hyper ? GxB_HYPERSPARSE : GxB_SPARSE ;
     // set C->iso = C_iso       OK
-    GrB_Info info = GB_new_bix (&C, true, // sparse or hyper, static header
+    GrB_Info info = GB_new_bix (&C, // sparse or hyper, existing header
         ctype, nI, nJ, GB_Ap_null, C_is_csc,
         sparsity, true, A->hyper_switch, Cnvec, cnz, true, C_iso, Context) ;
     if (info != GrB_SUCCESS)
@@ -103,6 +104,7 @@ GrB_Info GB_subref_phase3   // C=A(I,J)
     ASSERT ((*Cp_handle) == NULL) ;
     ASSERT ((*Ch_handle) == NULL) ;
     C->nvec_nonempty = Cnvec_nonempty ;
+    C->nvals = cnz ;
     C->magic = GB_MAGIC ;
 
     //--------------------------------------------------------------------------
@@ -185,7 +187,7 @@ GrB_Info GB_subref_phase3   // C=A(I,J)
     if (info != GrB_SUCCESS)
     { 
         // out of memory
-        GB_phbix_free (C) ;
+        GB_phybix_free (C) ;
         return (info) ;
     }
 

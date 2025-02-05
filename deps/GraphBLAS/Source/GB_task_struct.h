@@ -2,7 +2,7 @@
 // GB_task_struct.h: parallel task descriptor
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -101,7 +101,6 @@ GrB_Info GB_ewise_slice
     GB_Context Context
 ) ;
 
-GB_PUBLIC
 void GB_slice_vector
 (
     // output: return i, pA, and pB

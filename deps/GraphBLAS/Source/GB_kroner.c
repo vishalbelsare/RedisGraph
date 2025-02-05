@@ -2,7 +2,7 @@
 // GB_kroner: Kronecker product, C = kron (A,B)
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -22,24 +22,24 @@
 // FUTURE: each vector C(:,k) takes O(nnz(C(:,k))) work, but this is not
 // accounted for in the parallel load-balancing.
 
-#include "GB_kron.h"
-#include "GB_emult.h"
-
 #define GB_FREE_WORKSPACE   \
 {                           \
-    GB_phbix_free (A2) ;    \
-    GB_phbix_free (B2) ;    \
+    GB_Matrix_free (&A2) ;  \
+    GB_Matrix_free (&B2) ;  \
 }
 
 #define GB_FREE_ALL         \
 {                           \
     GB_FREE_WORKSPACE ;     \
-    GB_phbix_free (C) ;     \
+    GB_phybix_free (C) ;    \
 }
+
+#include "GB_kron.h"
+#include "GB_emult.h"
 
 GrB_Info GB_kroner                  // C = kron (A,B)
 (
-    GrB_Matrix C,                   // output matrix (static header)
+    GrB_Matrix C,                   // output matrix
     const bool C_is_csc,            // desired format of C
     const GrB_BinaryOp op,          // multiply operator
     const GrB_Matrix A_in,          // input matrix
@@ -55,11 +55,10 @@ GrB_Info GB_kroner                  // C = kron (A,B)
     //--------------------------------------------------------------------------
 
     GrB_Info info ;
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
 
     struct GB_Matrix_opaque A2_header, B2_header ;
-    GrB_Matrix A2 = GB_clear_static_header (&A2_header) ;
-    GrB_Matrix B2 = GB_clear_static_header (&B2_header) ;
+    GrB_Matrix A2 = NULL, B2 = NULL ;
 
     ASSERT_MATRIX_OK (A_in, "A_in for kron (A,B)", GB0) ;
     ASSERT_MATRIX_OK (B_in, "B_in for kron (A,B)", GB0) ;
@@ -81,6 +80,7 @@ GrB_Info GB_kroner                  // C = kron (A,B)
     { 
         GBURBLE ("A:") ;
         // set A2->iso = A->iso     OK: no need for burble
+        GB_CLEAR_STATIC_HEADER (A2, &A2_header) ;
         GB_OK (GB_dup_worker (&A2, A->iso, A, true, NULL, Context)) ;
         ASSERT_MATRIX_OK (A2, "dup A2 for kron (A,B)", GB0) ;
         GB_OK (GB_convert_bitmap_to_sparse (A2, Context)) ;
@@ -93,10 +93,11 @@ GrB_Info GB_kroner                  // C = kron (A,B)
     { 
         GBURBLE ("B:") ;
         // set B2->iso = B->iso     OK: no need for burble
+        GB_CLEAR_STATIC_HEADER (B2, &B2_header) ;
         GB_OK (GB_dup_worker (&B2, B->iso, B, true, NULL, Context)) ;
         ASSERT_MATRIX_OK (B2, "dup B2 for kron (A,B)", GB0) ;
         GB_OK (GB_convert_bitmap_to_sparse (B2, Context)) ;
-        ASSERT_MATRIX_OK (B2, "to sparse, A2 for kron (A,B)", GB0) ;
+        ASSERT_MATRIX_OK (B2, "to sparse, B2 for kron (A,B)", GB0) ;
         B = B2 ;
     }
 
@@ -172,7 +173,7 @@ GrB_Info GB_kroner                  // C = kron (A,B)
         ((C_is_hyper) ? GxB_HYPERSPARSE : GxB_SPARSE) ;
 
     // set C->iso = C_iso   OK
-    GB_OK (GB_new_bix (&C, true, // full, sparse, or hyper; static header
+    GB_OK (GB_new_bix (&C, // full, sparse, or hyper; existing header
         ctype, (int64_t) cvlen, (int64_t) cvdim, GB_Ap_malloc, C_is_csc,
         sparsity, true, B->hyper_switch, cnvec, cnzmax, true, C_iso, Context)) ;
 
@@ -217,6 +218,7 @@ GrB_Info GB_kroner                  // C = kron (A,B)
 
     if (!C_is_full)
     { 
+        // C is sparse or hypersparse
         #pragma omp parallel for num_threads(nthreads) schedule(guided)
         for (kC = 0 ; kC < cnvec ; kC++)
         {
@@ -231,10 +233,7 @@ GrB_Info GB_kroner                  // C = kron (A,B)
             const int64_t bknz = (Bp == NULL) ? bvlen : (Bp [kB+1] - Bp [kB]) ;
             // determine # entries in C(:,jC), the (kC)th vector of C
             // int64_t kC = kA * bnvec + kB ;
-            if (!C_is_full)
-            { 
-                Cp [kC] = aknz * bknz ;
-            }
+            Cp [kC] = aknz * bknz ;
             if (C_is_hyper)
             { 
                 Ch [kC] = jA * bvdim + jB ;
@@ -242,6 +241,7 @@ GrB_Info GB_kroner                  // C = kron (A,B)
         }
 
         GB_cumsum (Cp, cnvec, &(C->nvec_nonempty), nthreads, Context) ;
+        C->nvals = Cp [cnvec] ;
         if (C_is_hyper) C->nvec = cnvec ;
     }
 

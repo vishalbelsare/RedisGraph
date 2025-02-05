@@ -116,13 +116,13 @@ function [f,s,iso] = format (arg)
 %
 % See also GrB.
 
-% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
-% SPDX-License-Identifier: GPL-3.0-or-later
+% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
+% SPDX-License-Identifier: Apache-2.0
 
 if (nargin == 0)
     % f = GrB.format ; get the global format
     if (nargout > 1)
-        error ('usage: f = GrB.format') ;
+        error ('GrB:error', 'usage: f = GrB.format') ;
     end
     f = gbformat ;
 else

@@ -1,11 +1,12 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "graphcontext_type.h"
 #include "../version.h"
+#include "../globals.h"
 #include "encoding_version.h"
 #include "encoder/encode_graph.h"
 #include "decoders/decode_graph.h"
@@ -19,27 +20,32 @@ void ModuleEventHandler_AUXAfterKeyspaceEvent(void);
 // declaration of the type for redis registration
 RedisModuleType *GraphContextRedisModuleType;
 
-static void *_GraphContextType_RdbLoad(RedisModuleIO *rdb, int encver) {
+static void *_GraphContextType_RdbLoad
+(
+	RedisModuleIO *rdb,
+	int encver
+) {
 	GraphContext *gc = NULL;
 
 	if(encver > GRAPH_ENCODING_VERSION_LATEST) {
-		// Not forward compatible.
+		// not forward compatible
 		printf("Failed loading Graph, RedisGraph version (%d) is not forward compatible.\n",
 			   REDISGRAPH_MODULE_VERSION);
 		return NULL;
-		// Not backward compatible.
+		// not backward compatible
 	} else if(encver < GRAPHCONTEXT_TYPE_DECODE_MIN_V) {
 		printf("Failed loading Graph, RedisGraph version (%d) is not backward compatible with encoder version %d.\n",
 			   REDISGRAPH_MODULE_VERSION, encver);
 		return NULL;
-		// Previous version.
+		// previous version
 	} else if(encver < GRAPH_ENCODING_VERSION_LATEST) {
 		gc = Decode_Previous(rdb, encver);
 	} else {
-		// Current version.
+		// current version
 		gc = RdbLoadGraph(rdb);
 	}
-	// Add GraphContext to global array of graphs.
+
+	// add GraphContext to global array of graphs
 	GraphContext_RegisterWithModule(gc);
 	return gc;
 }
@@ -50,8 +56,24 @@ static void _GraphContextType_RdbSave(RedisModuleIO *rdb, void *value) {
 }
 
 // save an unsigned placeholder before and after the keyspace encoding
-static void _GraphContextType_AuxSave(RedisModuleIO *rdb, int when) {
+static void _GraphContextType_AuxSave
+(
+	RedisModuleIO *rdb,
+	int when
+) {
 	RedisModule_SaveUnsigned(rdb, 0);
+}
+
+// save an unsigned placeholder before and after the keyspace encoding
+static void _GraphContextType_AuxSave2
+(
+	RedisModuleIO *rdb,
+	int when
+) {
+	// only write AUX field if there are graphs in the keyspace
+	if(Globals_GetGraphCount() > 0) {
+		RedisModule_SaveUnsigned(rdb, 0);
+	}
 }
 
 // decode the unsigned placeholders saved before and after the keyspace values
@@ -65,7 +87,8 @@ static int _GraphContextType_AuxLoad(RedisModuleIO *rdb, int encver, int when) {
 
 static void _GraphContextType_Free(void *value) {
 	GraphContext *gc = value;
-	GraphContext_Delete(gc);
+	Globals_RemoveGraph(gc);
+	GraphContext_DecreaseRefCount(gc);
 }
 
 int GraphContextType_Register(RedisModuleCtx *ctx) {
@@ -77,6 +100,14 @@ int GraphContextType_Register(RedisModuleCtx *ctx) {
 	tm.aux_save           =  _GraphContextType_AuxSave;
 	tm.aux_load           =  _GraphContextType_AuxLoad;
 	tm.aux_save_triggers  =  REDISMODULE_AUX_BEFORE_RDB | REDISMODULE_AUX_AFTER_RDB;
+
+	// use aux_save2 if available
+	Redis_Version redis_version = RG_GetRedisVersion();
+	if(redis_version.major > 7 ||
+	  (redis_version.major == 7 && redis_version.minor >= 2)) {
+		tm.aux_save  = NULL;
+		tm.aux_save2 = _GraphContextType_AuxSave2;
+	}
 
 	GraphContextRedisModuleType = RedisModule_CreateDataType(ctx, "graphdata",
 			GRAPH_ENCODING_VERSION_LATEST, &tm);

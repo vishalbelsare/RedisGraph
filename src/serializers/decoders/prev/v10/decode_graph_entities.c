@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "decode_v10.h"
 
@@ -61,21 +61,27 @@ static SIValue _RdbLoadSIArray(RedisModuleIO *rdb) {
 	return list;
 }
 
-static void _RdbLoadEntity(RedisModuleIO *rdb, GraphContext *gc, GraphEntity *e) {
+static void _RdbLoadEntity
+(
+	RedisModuleIO *rdb,
+	GraphContext *gc,
+	GraphEntity *e
+) {
 	/* Format:
 	 * #properties N
 	 * (name, value type, value) X N
 	*/
-	uint64_t propCount = RedisModule_LoadUnsigned(rdb);
+	uint64_t n = RedisModule_LoadUnsigned(rdb);
+	SIValue vals[n];
+	Attribute_ID ids[n];
 
-	for(int i = 0; i < propCount; i++) {
-		Attribute_ID attr_id = RedisModule_LoadUnsigned(rdb);
-		SIValue attr_value = _RdbLoadSIValue(rdb);
-		GraphEntity_AddProperty(e, attr_id, attr_value);
-		SIValue_Free(attr_value);
+	for(int i = 0; i < n; i++) {
+		ids[i]  = RedisModule_LoadUnsigned(rdb);
+		vals[i] = _RdbLoadSIValue(rdb);
 	}
-}
 
+	AttributeSet_AddNoClone(e->attributes, ids, vals, n, false);
+}
 
 void RdbLoadNodes_v10(RedisModuleIO *rdb, GraphContext *gc, uint64_t node_count) {
 	/* Node Format:
@@ -96,7 +102,7 @@ void RdbLoadNodes_v10(RedisModuleIO *rdb, GraphContext *gc, uint64_t node_count)
 
 		// * (labels) x M
 		// M will currently always be 0 or 1
-		uint64_t l = (nodeLabelCount) ? RedisModule_LoadUnsigned(rdb) : GRAPH_NO_LABEL;
+		LabelID l = (nodeLabelCount) ? RedisModule_LoadUnsigned(rdb) : GRAPH_NO_LABEL;
 		Serializer_Graph_SetNode(gc->g, id, &l, nodeLabelCount, &n);
 
 		_RdbLoadEntity(rdb, gc, (GraphEntity *)&n);
@@ -104,8 +110,8 @@ void RdbLoadNodes_v10(RedisModuleIO *rdb, GraphContext *gc, uint64_t node_count)
 		if(l != GRAPH_NO_LABEL) {
 			Schema *s = GraphContext_GetSchemaByID(gc, l, SCHEMA_NODE);
 			ASSERT(s != NULL);
-			if(s->index) Index_IndexNode(s->index, &n);
-			if(s->fulltextIdx) Index_IndexNode(s->fulltextIdx, &n);
+			if(PENDING_FULLTEXT_IDX(s)) Index_IndexNode(PENDING_FULLTEXT_IDX(s), &n);
+			if(PENDING_EXACTMATCH_IDX(s)) Index_IndexNode(PENDING_EXACTMATCH_IDX(s), &n);
 		}
 	}
 }
@@ -141,6 +147,12 @@ void RdbLoadEdges_v10(RedisModuleIO *rdb, GraphContext *gc, uint64_t edge_count)
 				gc->decoding_context->multi_edge[relation], edgeId, srcId,
 				destId, relation, &e);
 		_RdbLoadEntity(rdb, gc, (GraphEntity *)&e);
+
+		// index edge
+		Schema *s = GraphContext_GetSchemaByID(gc, relation, SCHEMA_EDGE);
+		ASSERT(s != NULL);
+
+		if(PENDING_EXACTMATCH_IDX(s)) Index_IndexEdge(PENDING_EXACTMATCH_IDX(s), &e);
 	}
 }
 
@@ -153,4 +165,3 @@ void RdbLoadDeletedEdges_v10(RedisModuleIO *rdb, GraphContext *gc, uint64_t dele
 		Serializer_Graph_MarkEdgeDeleted(gc->g, id);
 	}
 }
-

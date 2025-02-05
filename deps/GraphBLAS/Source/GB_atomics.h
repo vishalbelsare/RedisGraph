@@ -2,12 +2,13 @@
 // GB_atomics.h: definitions for atomic operations
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2023, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 // All atomic operations used by SuiteSparse:GraphBLAS appear in this file.
+// OpenMP 4.0 or later is preferred.
 
 // These atomic operations assume either an ANSI C11 compiler that supports
 // OpenMP 3.1 or later, or Microsoft Visual Studio on 64-bit Windows (which
@@ -19,47 +20,27 @@
 #include "GB.h"
 
 //------------------------------------------------------------------------------
-// determine the architecture
-//------------------------------------------------------------------------------
-
-#if __x86_64__
-
-    // on the x86, atomic updates can be more aggresive.  The MIN, MAX, EQ,
-    // XNOR, and ANY monoids are implemented with atomic compare/exchange.
-
-    #define GB_X86_64 1
-
-#else
-
-    // on the ARM, Power8/9, and others, only use built-in #pragma omp atomic
-    // updates.  Do not use atomic compare/exchange.
-
-    #define GB_X86_64 0
-
-#endif
-
-//------------------------------------------------------------------------------
 // atomic updates
 //------------------------------------------------------------------------------
 
 // Whenever possible, the OpenMP pragma is used with a clause (as introduced in
-// OpenMP 3.1), as follow:
+// OpenMP 4.0), as follows:
 //
-//      #pragma omp atomic [clause]
+//      #pragma omp atomic seq_cst [clause]
 //
 // where [clause] is read, write, update, or capture.
 //
 // Microsoft Visual Studio only supports OpenMP 2.0, which does not have the
-// [clause].  Without the [clause], #pragma omp atomic is like 
-// #pragma omp atomic update, but the expression can only be one of:
-//      
+// [clause].  Without the [clause], #pragma omp atomic is like
+// #pragma omp atomic seq_cst update, but the expression can only be one of:
+//
 //      x binop= expression
 //      x++
 //      ++x
 //      x--
 //      --x
 //
-// where binop is one of these operators:    + * - / & ^ | << >> 
+// where binop is one of these operators:    + * - / & ^ | << >>
 //
 // OpenMP 3.0 and later support additional options for the "update" clause,
 // but SuiteSparse:GraphBLAS uses only this form:
@@ -73,18 +54,18 @@
 // types INTx, UINTx, FP32, FP64 (for x = 8, 16, 32, and 64).  For the boolean
 // monoids, only the BOOL type is used.
 //
-// As a result, the atomic updates are the same for gcc and icc (which support
-// OpenMP 3.0 or later) with the "update" clause.  For MS Visual Studio, the
+// As a result, the atomic updates are the same for gcc and icx (which support
+// OpenMP 4.0 or later) with the "update" clause.  For MS Visual Studio, the
 // "update" clause is removed since it supports OpenMP 2.0.
 
 #if ( _OPENMP >= 201307 )
 
-    // OpenMP 4.0 or later
-    #define GB_ATOMIC_UPDATE GB_PRAGMA (omp atomic update seq_cst)
+    // OpenMP 4.0 or later: seq_cst added
+    #define GB_ATOMIC_UPDATE GB_PRAGMA (omp atomic seq_cst update)
 
 #elif ( _OPENMP >= 201107 )
 
-    // OpenMP 3.1
+    // OpenMP 3.1: no seq_cst keyword
     #define GB_ATOMIC_UPDATE GB_PRAGMA (omp atomic update)
 
 #elif ( _OPENMP >= 199810 )
@@ -103,6 +84,10 @@
 // atomic read and write
 //------------------------------------------------------------------------------
 
+// x86_64: no atomic read/write is needed.
+
+// ARM, Power8/9, and others need the explicit atomic read/write.
+
 // In Microsoft Visual Studio, simple reads and writes to properly aligned
 // 64-bit values are already atomic on 64-bit Windows for any architecture
 // supported by Windows (any Intel or ARM architecture). See:
@@ -111,30 +96,21 @@
 // is no need for atomic reads/writes when compiling GraphBLAS on Windows
 // with MS Visual Studio.
 
-// ARM, Power8/9, and others need the explicit atomic read/write.
-// x86: no atomic read/write is needed.
+#if GBX86
 
-#if GB_X86_64
-
-    // x86: no atomic read/write is needed.
+    // x86_64: no atomic read/write is needed.
     #define GB_ATOMIC_READ
     #define GB_ATOMIC_WRITE
 
-#elif ( _OPENMP >= 201811 )
-
-    // OpenMP 5.0 or later
-    #define GB_ATOMIC_READ    GB_PRAGMA (omp atomic read acquire)
-    #define GB_ATOMIC_WRITE   GB_PRAGMA (omp atomic write release)
-
 #elif ( _OPENMP >= 201307 )
 
-    // OpenMP 4.0 and 4.5
-    #define GB_ATOMIC_READ    GB_PRAGMA (omp atomic read seq_cst)
-    #define GB_ATOMIC_WRITE   GB_PRAGMA (omp atomic write seq_cst)
+    // OpenMP 4.0 and later have atomic reads and writes, and seq_cst
+    #define GB_ATOMIC_READ    GB_PRAGMA (omp atomic seq_cst read)
+    #define GB_ATOMIC_WRITE   GB_PRAGMA (omp atomic seq_cst write)
 
 #elif ( _OPENMP >= 201107 )
 
-    // OpenMP 3.1
+    // OpenMP 3.1 and later have atomic reads and writes, but no seq_cst clause
     #define GB_ATOMIC_READ    GB_PRAGMA (omp atomic read)
     #define GB_ATOMIC_WRITE   GB_PRAGMA (omp atomic write)
 
@@ -176,14 +152,14 @@
 //      { result = target ; target |= value ; }     for int64_t
 //      { result = target++ ; }                     for int64_t
 //
-// OpenMP 3.1 and later supports atomic captures with a "capture" clause: 
+// OpenMP 3.1 and later supports atomic captures with a "capture" clause:
 //
-//      #pragma omp atomic capture
+//      #pragma omp atomic seq_cst capture
 //      { result = target ; target = value ; }
 //
 // or with a binary operator
 //
-//      #pragma omp atomic capture
+//      #pragma omp atomic seq_cst capture
 //      { result = target ; target binop= value ; }
 //
 // MS Visual Studio supports only OpenMP 2.0, and does not support any
@@ -195,12 +171,12 @@
 
 #if ( _OPENMP >= 201307 )
 
-    // OpenMP 4.0 or later
-    #define GB_ATOMIC_CAPTURE GB_PRAGMA (omp atomic capture seq_cst)
+    // OpenMP 4.0 or later: added seq_cst feature
+    #define GB_ATOMIC_CAPTURE GB_PRAGMA (omp atomic seq_cst capture)
 
 #elif ( _OPENMP >= 201107 )
 
-    // OpenMP 3.1
+    // OpenMP 3.1: no seq_cst clause
     #define GB_ATOMIC_CAPTURE GB_PRAGMA (omp atomic capture)
 
 #elif ( _OPENMP >= 199810 )
@@ -223,7 +199,7 @@
     // int64_t result, target, value ;
     // do this atomically: { result = target ; target = value ; }
 
-    #if GB_MICROSOFT
+    #if GB_COMPILER_MSC
 
         #define GB_ATOMIC_CAPTURE_INT64(result, target, value)          \
         {                                                               \
@@ -251,7 +227,7 @@
     // int8_t result, target, value ;
     // do this atomically: { result = target ; target = value ; }
 
-    #if GB_MICROSOFT
+    #if GB_COMPILER_MSC
 
         #define GB_ATOMIC_CAPTURE_INT8(result, target, value)           \
         {                                                               \
@@ -279,7 +255,7 @@
     // int64_t result, target, value ;
     // do this atomically: { result = target ; target |= value ; }
 
-    #if GB_MICROSOFT
+    #if GB_COMPILER_MSC
 
         #define GB_ATOMIC_CAPTURE_INT64_OR(result, target, value)       \
         {                                                               \
@@ -314,7 +290,7 @@
     // The MS Visual Studio version computes result = ++target, so result must
     // be decremented by one.
 
-    #if GB_MICROSOFT
+    #if GB_COMPILER_MSC
 
         #define GB_ATOMIC_CAPTURE_INC64(result,target)                  \
         {                                                               \
@@ -409,19 +385,17 @@
 // Type punning is used to extend these signed integer types to unsigned
 // integers of the same number of bytes, and to float and double.
 
-#if GB_MICROSOFT
+//------------------------------------------------------------------------------
+// GB_PUN: type punning
+//------------------------------------------------------------------------------
 
-    //--------------------------------------------------------------------------
-    // GB_PUN: type punning
-    //--------------------------------------------------------------------------
+// With type punning, a value is treated as a different type, but with no
+// typecasting.  The address of the variable is first typecasted to a (type *)
+// pointer, and then the pointer is dereferenced.
 
-    // With type punning, a value is treated as a different type, but with no
-    // typecasting.  The address of the variable is first typecasted to a (type
-    // *) pointer, and then the pointer is dereferenced.  Type punning is only
-    // needed to extend the atomic compare/exchange functions for Microsoft
-    // Visual Studio.
+#define GB_PUN(type,value) (*((type *) (&(value))))
 
-    #define GB_PUN(type,value) (*((type *) (&(value))))
+#if GB_COMPILER_MSC
 
     //--------------------------------------------------------------------------
     // compare/exchange for MS Visual Studio
@@ -465,29 +439,32 @@
     // compare/exchange for gcc, icc, and clang on x86 and Power8/9
     //--------------------------------------------------------------------------
 
-    // the compare/exchange function is generic for any type
-    #define GB_ATOMIC_COMPARE_EXCHANGE_X(target, expected, desired)     \
-        __atomic_compare_exchange (target, &expected, &desired,         \
-            true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)                   \
+    #include <stdatomic.h>
 
     // bool, int8_t, and uint8_t
     #define GB_ATOMIC_COMPARE_EXCHANGE_8(target, expected, desired)     \
-            GB_ATOMIC_COMPARE_EXCHANGE_X(target, expected, desired)
+        atomic_compare_exchange_weak                                    \
+            ((volatile _Atomic uint8_t  *) (target),                    \
+            (uint8_t  *) (&(expected)), GB_PUN (uint8_t , desired))
 
     // int16_t and uint16_t
     #define GB_ATOMIC_COMPARE_EXCHANGE_16(target, expected, desired)    \
-            GB_ATOMIC_COMPARE_EXCHANGE_X (target, expected, desired)
+        atomic_compare_exchange_weak                                    \
+            ((volatile _Atomic uint16_t *) (target),                    \
+            (uint16_t *) (&(expected)), GB_PUN (uint16_t, desired))
 
     // float, int32_t, and uint32_t
     #define GB_ATOMIC_COMPARE_EXCHANGE_32(target, expected, desired)    \
-            GB_ATOMIC_COMPARE_EXCHANGE_X (target, expected, desired)
+        atomic_compare_exchange_weak                                    \
+            ((volatile _Atomic uint32_t *) (target),                    \
+            (uint32_t *) (&(expected)), GB_PUN (uint32_t, desired))
 
     // double, int64_t, and uint64_t
     #define GB_ATOMIC_COMPARE_EXCHANGE_64(target, expected, desired)    \
-            GB_ATOMIC_COMPARE_EXCHANGE_X (target, expected, desired)
-
+        atomic_compare_exchange_weak                                    \
+            ((volatile _Atomic uint64_t *) (target),                    \
+            (uint64_t *) (&(expected)), GB_PUN (uint64_t, desired))
 
 #endif
-
 #endif
 

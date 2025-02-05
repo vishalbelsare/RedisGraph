@@ -1,45 +1,65 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "op_update.h"
 #include "RG.h"
-#include "../../errors.h"
 #include "../../query_ctx.h"
 #include "../../util/arr.h"
-#include "../../util/qsort.h"
 #include "../../util/rmalloc.h"
+#include "../../errors/errors.h"
 #include "../../util/rax_extensions.h"
 #include "../../arithmetic/arithmetic_expression.h"
 
-/* Forward declarations. */
-static OpResult UpdateInit(OpBase *opBase);
+// forward declarations
 static Record UpdateConsume(OpBase *opBase);
 static OpResult UpdateReset(OpBase *opBase);
 static OpBase *UpdateClone(const ExecutionPlan *plan, const OpBase *opBase);
 static void UpdateFree(OpBase *opBase);
 
 static Record _handoff(OpUpdate *op) {
-	/* TODO: poping a record out of op->records
+	/* TODO: popping a record out of op->records
 	 * will reverse the order in which records
 	 * are passed down the execution plan. */
 	if(op->records && array_len(op->records) > 0) return array_pop(op->records);
 	return NULL;
 }
 
+// fake hash function
+// hash of key is simply key
+static uint64_t _id_hash
+(
+	const void *key
+) {
+	return ((uint64_t)key);
+}
+
+// hashtable entry free callback
+static void freeCallback
+(
+	dict *d,
+	void *val
+) {
+	PendingUpdateCtx_Free((PendingUpdateCtx*)val);
+}
+
+// hashtable callbacks
+static dictType _dt = { _id_hash, NULL, NULL, NULL, NULL, freeCallback, NULL,
+	NULL, NULL, NULL};
+
 OpBase *NewUpdateOp(const ExecutionPlan *plan, rax *update_exps) {
 	OpUpdate *op = rm_calloc(1, sizeof(OpUpdate));
-	op->records            =  NULL;
-	op->node_updates       =  NULL;
-	op->edge_updates       =  NULL;
-	op->updates_committed  =  false;
-	op->update_ctxs        =  update_exps;
-	op->gc                 =  QueryCtx_GetGraphCtx();
+	op->gc                = QueryCtx_GetGraphCtx();
+	op->records           = array_new(Record, 64);
+	op->update_ctxs       = update_exps;
+	op->node_updates      = HashTableCreate(&_dt);
+	op->edge_updates      = HashTableCreate(&_dt);
+	op->updates_committed = false;
 
 	// set our op operations
-	OpBase_Init((OpBase *)op, OPType_UPDATE, "Update", UpdateInit, UpdateConsume,
+	OpBase_Init((OpBase *)op, OPType_UPDATE, "Update", NULL, UpdateConsume,
 				UpdateReset, NULL, UpdateClone, UpdateFree, true, plan);
 
 	// iterate over all update expressions
@@ -54,18 +74,10 @@ OpBase *NewUpdateOp(const ExecutionPlan *plan, rax *update_exps) {
 	return (OpBase *)op;
 }
 
-static OpResult UpdateInit(OpBase *opBase) {
-	OpUpdate *op = (OpUpdate *)opBase;
-
-	op->stats         =  QueryCtx_GetResultSetStatistics();
-	op->records       =  array_new(Record, 64);
-	op->node_updates  =  array_new(PendingUpdateCtx, raxSize(op->update_ctxs));
-	op->edge_updates  =  array_new(PendingUpdateCtx, raxSize(op->update_ctxs));
-
-	return OP_OK;
-}
-
-static Record UpdateConsume(OpBase *opBase) {
+static Record UpdateConsume
+(
+	OpBase *opBase
+) {
 	OpUpdate *op = (OpUpdate *)opBase;
 	OpBase *child = op->op.children[0];
 	Record r;
@@ -80,25 +92,30 @@ static Record UpdateConsume(OpBase *opBase) {
 		raxSeek(&op->it, "^", NULL, 0);
 		while(raxNext(&op->it)) {
 			EntityUpdateEvalCtx *ctx = op->it.data;
-			EvalEntityUpdates(op->gc, &op->node_updates, &op->edge_updates, r, ctx, true);
+			EvalEntityUpdates(op->gc, op->node_updates, op->edge_updates, r, ctx, true);
 		}
 
 		array_append(op->records, r);
 	}
+	
+	uint node_updates_count = HashTableElemCount(op->node_updates);
+	uint edge_updates_count = HashTableElemCount(op->edge_updates);
 
-	// done reading; we're not going to call Consume any longer
-	// there might be operations like "Index Scan" that need to free the
-	// index R/W lock - as such, free all ExecutionPlan operations up the chain.
-	OpBase_PropagateFree(child);
+	if(node_updates_count > 0 || edge_updates_count > 0) {
+		// done reading; we're not going to call Consume any longer
+		// there might be operations like "Index Scan" that need to free the
+		// index R/W lock - as such, free all ExecutionPlan operations up the chain.
+		OpBase_PropagateReset(child);
 
-	// lock everything
-	QueryCtx_LockForCommit();
-	{
-		CommitUpdates(op->gc, op->stats, op->node_updates, ENTITY_NODE);
-		CommitUpdates(op->gc, op->stats, op->edge_updates, ENTITY_EDGE);
+		// lock everything
+		QueryCtx_LockForCommit();
+
+		CommitUpdates(op->gc, op->node_updates, ENTITY_NODE);
+		CommitUpdates(op->gc, op->edge_updates, ENTITY_EDGE);
 	}
-	// release lock
-	QueryCtx_UnlockCommit(opBase);
+
+	HashTableEmpty(op->node_updates, NULL);
+	HashTableEmpty(op->edge_updates, NULL);
 
 	op->updates_committed = true;
 
@@ -115,10 +132,10 @@ static OpBase *UpdateClone(const ExecutionPlan *plan, const OpBase *opBase) {
 
 static OpResult UpdateReset(OpBase *ctx) {
 	OpUpdate *op = (OpUpdate *)ctx;
-	array_free(op->node_updates);
-	op->node_updates = NULL;
-	array_free(op->edge_updates);
-	op->edge_updates = NULL;
+
+	HashTableEmpty(op->node_updates, NULL);
+	HashTableEmpty(op->edge_updates, NULL);
+
 	op->updates_committed = false;
 	return OP_OK;
 }
@@ -127,16 +144,16 @@ static void UpdateFree(OpBase *ctx) {
 	OpUpdate *op = (OpUpdate *)ctx;
 
 	if(op->node_updates) {
-		array_free(op->node_updates);
+		HashTableRelease(op->node_updates);
 		op->node_updates = NULL;
 	}
 
 	if(op->edge_updates) {
-		array_free(op->edge_updates);
+		HashTableRelease(op->edge_updates);
 		op->edge_updates = NULL;
 	}
 
-	// Free each update context.
+	// free each update context
 	if(op->update_ctxs) {
 		raxFreeWithCallback(op->update_ctxs, (void(*)(void *))UpdateCtx_Free);
 		op->update_ctxs = NULL;
@@ -151,4 +168,3 @@ static void UpdateFree(OpBase *ctx) {
 
 	raxStop(&op->it);
 }
-

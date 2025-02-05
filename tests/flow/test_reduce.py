@@ -1,6 +1,4 @@
-from RLTest import Env
-from redis import ResponseError
-from redisgraph import Graph, Node, Edge
+from common import *
 
 GRAPH_ID = "REDUCE"
 
@@ -20,7 +18,7 @@ class testReduce():
     def __init__(self):
         self.env = Env(decodeResponses=True)
         self.conn = self.env.getConnection()
-        self.graph = Graph(GRAPH_ID ,self.conn)
+        self.graph = Graph(self.conn, GRAPH_ID)
 
     def test_sum_reduction(self):
         # sum = 0, for n in [1,2,3], sum += n
@@ -86,7 +84,7 @@ class testReduce():
         try:
             self.graph.query(q).result_set
         except ResponseError as e:
-            self.env.assertIn("n not defined", str(e))
+            self.env.assertIn("Unknown function 'reduce'", str(e))
         #-----------------------------------------------------------------------
 
         # missing list expression
@@ -110,21 +108,21 @@ class testReduce():
         try:
             actual = self.graph.query(q).result_set
         except ResponseError as e:
-            self.env.assertIn("x not defined", str(e))
+            self.env.assertIn("'x' not defined", str(e))
         #-----------------------------------------------------------------------
 
         q = "RETURN reduce(sum=0, n in x | sum+n)"
         try:
             actual = self.graph.query(q).result_set
         except ResponseError as e:
-            self.env.assertIn("x not defined", str(e))
+            self.env.assertIn("'x' not defined", str(e))
         #-----------------------------------------------------------------------
 
         q = "RETURN reduce(sum=0, n in [1,2,3] | sum+x)"
         try:
             actual = self.graph.query(q).result_set
         except ResponseError as e:
-            self.env.assertIn("x not defined", str(e))
+            self.env.assertIn("'x' not defined", str(e))
 
     def test_nested_reduction(self):
         # sum = 1 + 1
@@ -180,3 +178,38 @@ class testReduce():
         expected = None
         self.env.assertEquals(actual, expected)
 
+    def test_invalid_use(self):
+        queries = [
+            "return reduce(1,[1],$a)",
+            "with 1 as x return reduce(x,x,x)",
+            "with {a:1, b:2} as x return reduce(x,x,x)",
+            "return reduce()",
+            "return reduce(1)"
+        ]
+
+        for query in queries:
+            try:
+                self.graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError as e:
+                # Expecting an error.
+                self.env.assertContains(str(e), "Unknown function 'reduce'")
+                pass
+    
+    def test_aggregate_in_reduce(self):
+        queries = [
+            "RETURN reduce(x = 0, n in [1] | min(n))",
+            "WITH [1,2,3] as l RETURN reduce(x = 0, n in l | min(n))",
+            "WITH [1,2,3] as l RETURN reduce(x = 0, n in l | min(n))",
+            "WITH [1,2,3] as l RETURN reduce(x = min(l), n in l | n)",
+            "WITH [1,2,3] as l RETURN reduce(x = 0, n in min(l) | n)"
+        ]
+
+        for query in queries:
+            try:
+                self.graph.query(query)
+                self.env.assertTrue(False)
+            except redis.exceptions.ResponseError as e:
+                # Expecting an error.
+                self.env.assertContains(str(e), "Invalid use of aggregating function 'min'")
+                pass

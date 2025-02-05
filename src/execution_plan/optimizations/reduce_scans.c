@@ -1,15 +1,16 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "RG.h"
+#include "../../util/arr.h"
+#include "../../query_ctx.h"
 #include "../ops/op_filter.h"
 #include "../ops/op_node_by_label_scan.h"
 #include "../ops/op_conditional_traverse.h"
-#include "../../util/arr.h"
-#include "../../query_ctx.h"
+#include "../execution_plan_build/execution_plan_util.h"
 #include "../execution_plan_build/execution_plan_modify.h"
 
 /* The reduce scans optimizer searches the execution plans for
@@ -19,9 +20,9 @@
 
 static OpBase *_LabelScanToConditionalTraverse(NodeByLabelScan *op) {
 	Graph *g = QueryCtx_GetGraph();
-	const char *alias = op->n.alias;
+	const char *alias = op->n->alias;
 	AlgebraicExpression *ae = AlgebraicExpression_NewOperand(GrB_NULL, true, alias, alias, NULL,
-															 op->n.label);
+															 op->n->label);
 	return NewCondTraverseOp(op->op.plan, g, ae);
 }
 
@@ -36,7 +37,8 @@ static void _reduceScans(ExecutionPlan *plan, OpBase *scan) {
 	// Collect variables bound before this operation.
 	rax *bound_vars = raxNew();
 	for(int i = 0; i < scan->childCount; i ++) {
-		ExecutionPlan_BoundVariables(scan->children[i], bound_vars);
+		ExecutionPlan_BoundVariables(scan->children[i], bound_vars,
+			scan->children[i]->plan);
 	}
 
 	if(raxFind(bound_vars, (unsigned char *)scanned_alias, strlen(scanned_alias)) != raxNotFound) {
@@ -56,7 +58,7 @@ static void _reduceScans(ExecutionPlan *plan, OpBase *scan) {
 
 void reduceScans(ExecutionPlan *plan) {
 	// Collect all SCAN operations within the execution plan.
-	OpBase **scans = ExecutionPlan_CollectOpsMatchingType(plan->root, SCAN_OPS, SCAN_OP_COUNT);
+	OpBase **scans = ExecutionPlan_CollectOpsMatchingTypes(plan->root, SCAN_OPS, SCAN_OP_COUNT);
 	uint scan_count = array_len(scans);
 	for(uint i = 0; i < scan_count; i++) {
 		_reduceScans(plan, scans[i]);

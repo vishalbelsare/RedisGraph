@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
@@ -23,6 +23,7 @@ typedef struct {
 	int destNodeIdx;                       /* Node set by operation. */
 	bool expandInto;                       /* Both src and dest already resolved. */
 	FT_FilterNode *ft;                     /* If not NULL, FilterTree applied to traversed edge. */
+	bool shortestPaths;                    /* Only collect shortest paths. */
 	unsigned int minHops;                  /* Maximum number of hops to perform. */
 	unsigned int maxHops;                  /* Maximum number of hops to perform. */
 	int edgeRelationCount;                 /* Length of edgeRelationTypes. */

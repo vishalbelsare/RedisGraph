@@ -1,8 +1,14 @@
+/*
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
+
+#include "RG.h"
 #include "ast_build_filter_tree.h"
 #include "ast_shared.h"
-#include "../RG.h"
-#include "../errors.h"
 #include "../util/arr.h"
+#include "../errors/errors.h"
 #include "../arithmetic/arithmetic_expression_construct.h"
 
 // Forward declaration
@@ -99,7 +105,7 @@ static FT_FilterNode *_convertBinaryOperator(const cypher_astnode_t *op_node) {
 		rhs = cypher_ast_binary_operator_get_argument2(op_node);
 		return _CreateFilterSubtree(op, lhs, rhs);
 	case OP_NOT:
-		ErrorCtx_SetError("Invalid usage of 'NOT' filter with expressions on left and right sides.");
+		ErrorCtx_SetError(EMSG_INVALIDE_NOT_USAGE);
 		return NULL;
 	default:
 		return FilterTree_CreateExpressionFilter(AR_EXP_FromASTNode(op_node));
@@ -112,11 +118,10 @@ static FT_FilterNode *_convertUnaryOperator(const cypher_astnode_t *op_node) {
 	const cypher_astnode_t *arg = cypher_ast_unary_operator_get_argument(op_node);
 	AST_Operator op = AST_ConvertOperatorNode(operator);
 	switch(op) {
-	case OP_IS_NULL:
-	case OP_IS_NOT_NULL:
-		return FilterTree_CreateExpressionFilter(AR_EXP_FromASTNode(op_node));
-	default:
-		return _CreateFilterSubtree(op, arg, NULL);
+		case OP_NOT:
+			return _CreateFilterSubtree(op, arg, NULL);
+		default:
+			return FilterTree_CreateExpressionFilter(AR_EXP_FromASTNode(op_node));
 	}
 }
 
@@ -162,7 +167,7 @@ static FT_FilterNode *_convertComparison(const cypher_astnode_t *comparison_node
 	return root;
 }
 
-static FT_FilterNode *_convertInlinedProperties(const AST *ast, const cypher_astnode_t *entity,
+static FT_FilterNode *_convertInlinedProperties(const cypher_astnode_t *entity,
 												GraphEntityType type) {
 	const cypher_astnode_t *props = NULL;
 	const cypher_astnode_t *ast_identifer;
@@ -175,7 +180,7 @@ static FT_FilterNode *_convertInlinedProperties(const AST *ast, const cypher_ast
 	if(!props) return NULL;
 
 	// Retrieve the entity's alias.
-	const char *alias = AST_GetEntityName(ast, entity);
+	const char *alias = AST_ToString(entity);
 
 	FT_FilterNode *root = NULL;
 	uint nelems = cypher_ast_map_nentries(props);
@@ -208,7 +213,7 @@ static FT_FilterNode *_convertPatternPath(const cypher_astnode_t *entity) {
 	 * First argument is a pointer to the original AST pattern node.
 	 * argument 1..alias_count are the referenced aliases,
 	 * required for filter positioning when constructing an execution plan. */
-	AR_ExpNode *exp = AR_EXP_NewOpNode("path_filter", 1 + alias_count);
+	AR_ExpNode *exp = AR_EXP_NewOpNode("path_filter", true, 1 + alias_count);
 	exp->op.children[0] = AR_EXP_NewConstOperandNode(SI_PtrVal((void *)entity));
 	for(uint i = 0; i < alias_count; i++) {
 		AR_ExpNode *child = AR_EXP_NewVariableOperandNode(aliases[i]);
@@ -248,13 +253,13 @@ void _AST_ConvertGraphPatternToFilter(const AST *ast, FT_FilterNode **root,
 		// Nodes are in even places.
 		for(uint n = 0; n < nelements; n += 2) {
 			const cypher_astnode_t *node = cypher_ast_pattern_path_get_element(path, n);
-			ft_node = _convertInlinedProperties(ast, node, GETYPE_NODE);
+			ft_node = _convertInlinedProperties(node, GETYPE_NODE);
 			if(ft_node) _FT_Append(root, ft_node);
 		}
 		// Edges are in odd places.
 		for(uint e = 1; e < nelements; e += 2) {
 			const cypher_astnode_t *edge = cypher_ast_pattern_path_get_element(path, e);
-			ft_node = _convertInlinedProperties(ast, edge, GETYPE_EDGE);
+			ft_node = _convertInlinedProperties(edge, GETYPE_EDGE);
 			if(ft_node) _FT_Append(root, ft_node);
 		}
 	}
@@ -329,8 +334,12 @@ FT_FilterNode *AST_BuildFilterTree(AST *ast) {
 	return filter_tree;
 }
 
-FT_FilterNode *AST_BuildFilterTreeFromClauses(const AST *ast,
-											  const cypher_astnode_t **clauses, uint count) {
+FT_FilterNode *AST_BuildFilterTreeFromClauses
+(
+	const AST *ast,
+	const cypher_astnode_t **clauses,
+	uint count
+) {
 	cypher_astnode_type_t type;
 	FT_FilterNode *filter_tree = NULL;
 	const cypher_astnode_t *predicate = NULL;

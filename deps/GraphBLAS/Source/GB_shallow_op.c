@@ -2,7 +2,7 @@
 // GB_shallow_op:  create a shallow copy and apply a unary operator to a matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -26,9 +26,8 @@
 
 #include "GB_apply.h"
 
-#define GB_FREE_ALL GB_phbix_free (C) ;
+#define GB_FREE_ALL GB_phybix_free (C) ;
 
-GB_PUBLIC
 GrB_Info GB_shallow_op      // create shallow matrix and apply operator
 (
     GrB_Matrix C,           // output C, of type op*->ztype, static header
@@ -46,7 +45,7 @@ GrB_Info GB_shallow_op      // create shallow matrix and apply operator
     // check inputs
     //--------------------------------------------------------------------------
 
-    ASSERT (C != NULL && C->static_header) ;
+    ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
     ASSERT_MATRIX_OK (A, "A for shallow_op", GB0) ;
     ASSERT_OP_OK (op, "unop/binop for shallow_op", GB0) ;
     ASSERT (!GB_ZOMBIES (A)) ;
@@ -93,7 +92,7 @@ GrB_Info GB_shallow_op      // create shallow matrix and apply operator
     // initialized the header for C, but do not allocate C->{p,h,b,i,x}
     // C has the exact same sparsity structure as A.
     GrB_Info info ;
-    info = GB_new (&C, true, // any sparsity, static header
+    info = GB_new (&C, // any sparsity, existing header
         ztype, A->vlen, A->vdim, GB_Ap_null, C_is_csc,
         GB_sparsity (A), A->hyper_switch, 0, Context) ;
     ASSERT (info == GrB_SUCCESS) ;
@@ -112,13 +111,20 @@ GrB_Info GB_shallow_op      // create shallow matrix and apply operator
     C->nvec = A->nvec ;
     C->nvec_nonempty = A->nvec_nonempty ;
     C->jumbled = A->jumbled ;           // C is jumbled if A is jumbled
-    C->nvals = A->nvals ;               // if A bitmap 
+    C->nvals = A->nvals ;
     C->magic = GB_MAGIC ;
     C->iso = C_iso ;                    // OK
     if (C_iso)
     { 
         GB_BURBLE_MATRIX (A, "(iso apply) ") ;
     }
+
+    //--------------------------------------------------------------------------
+    // make a shallow copy of the A->Y hyper_hash
+    //--------------------------------------------------------------------------
+
+    C->Y = A->Y ;
+    C->Y_shallow = (A->Y != NULL) ;
 
     //--------------------------------------------------------------------------
     // check for empty matrix
@@ -174,8 +180,9 @@ GrB_Info GB_shallow_op      // create shallow matrix and apply operator
     // apply the operator to the numerical values
     //--------------------------------------------------------------------------
 
-    // allocate new space for the numerical values of C
-    C->x = GB_XALLOC (C_iso, anz, C->type->size, &(C->x_size)) ;
+    // allocate new space for the numerical values of C; use calloc if bitmap
+    C->x = GB_XALLOC (GB_IS_BITMAP (C), C_iso, anz,     // x:OK
+        C->type->size, &(C->x_size)) ;
     C->x_shallow = false ;          // free C->x when freeing C
     if (C->x == NULL)
     { 

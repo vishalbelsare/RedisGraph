@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
@@ -27,3 +27,4 @@ void *DataBlock_AllocateItemOutOfOrder(DataBlock *dataBlock, uint64_t idx);
  * 1. Item distructor is not invoked in this call.
  * 2. This call does not decrease the number of items in the data block. */
 void DataBlock_MarkAsDeletedOutOfOrder(DataBlock *dataBlock, uint64_t idx);
+

@@ -2,7 +2,7 @@
 // GB_subassign_IxJ_slice: slice IxJ for subassign
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -31,7 +31,7 @@
         //  M   c   r   +   -   S       19:  C(I,J)<!M,repl> += x, with S
 
 // There are 10 methods that perform scalar assignment: the 6 listed above, and
-// Methods 05, 07, 09, and 11.  The latter 4 methods do do not need to iterate
+// Methods 05, 07, 09, and 11.  The latter 4 methods do not need to iterate
 // over the entire IxJ space, because of the mask M:
 
         //  M   -   -   -   -   -       05:  C(I,J)<M> = x

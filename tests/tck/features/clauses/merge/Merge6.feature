@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,7 +67,6 @@ Feature: Merge6 - Merge relationships - on create
       | +relationships | 1 |
       | +properties    | 1 |
 
-  @skip
   Scenario: [3] Updating one property with ON CREATE
     Given an empty graph
     And having executed:
@@ -93,7 +92,6 @@ Feature: Merge6 - Merge relationships - on create
       | keyValue      |
       | ['name->foo'] |
 
-  @skip
   Scenario: [4] Null-setting one property with ON CREATE
     Given an empty graph
     And having executed:
@@ -118,7 +116,6 @@ Feature: Merge6 - Merge relationships - on create
       | keyValue |
       | []       |
 
-  @skip
   Scenario: [6] Copying properties from node with ON CREATE
     Given an empty graph
     And having executed:
@@ -144,7 +141,7 @@ Feature: Merge6 - Merge relationships - on create
       | keyValue    |
       | ['name->A'] |
 
-  @crash
+  @skip
   Scenario: [7] Copying properties from literal map with ON CREATE
     Given an empty graph
     And having executed:

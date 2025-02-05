@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
 #include "bulk_insert.h"
@@ -48,7 +48,7 @@ static int* _BulkInsert_ReadHeaderLabels
     // array of all label IDs
     int* label_ids = array_new(int, 1);
     // stack variable to contain a single label
-    char label[labels_len];
+    char label[labels_len + 1];
 
 	while (true) {
 		// look for a colon delimiting another label
@@ -64,6 +64,7 @@ static int* _BulkInsert_ReadHeaderLabels
 		} else {
 			// reached the last (or only) label; copy it
 			size_t len = strlen(labels);
+			// Also copy the terminating NULL character.
 			memcpy(label, labels, len + 1);
 		}
 
@@ -112,7 +113,7 @@ static Attribute_ID* _BulkInsert_ReadHeaderProperties
 		*data_idx += strlen(prop_key) + 1;
 
 		// add properties to schemas
-		prop_indices[j] = GraphContext_FindOrAddAttribute(gc, prop_key);
+		prop_indices[j] = GraphContext_FindOrAddAttribute(gc, prop_key, NULL);
 	}
 
     return prop_indices;
@@ -225,7 +226,7 @@ static int _BulkInsert_ProcessNodeFile
     //--------------------------------------------------------------------------
 
 	while (data_idx < data_len) {
-		Node n;
+		Node n = GE_NEW_NODE();
 		GraphEntity* ge;
 		Graph_CreateNode(gc->g, &n, label_ids, label_count);
 		ge = (GraphEntity*)&n;

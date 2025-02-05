@@ -2,7 +2,7 @@
 // GxB_Vector_subassign_[SCALAR]: assign scalar to vector, via scalar expansion
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -13,6 +13,7 @@
 
 // The actual work is done in GB_subassign_scalar.c.
 
+#define GB_FREE_ALL ;
 #include "GB_subassign.h"
 #include "GB_ij.h"
 #include "GB_get_mask.h"
@@ -36,9 +37,9 @@ GrB_Info GB_EVAL2 (GXB (Vector_subassign_), T) /* w(I)<M> = accum (w(I),x)  */ \
     GB_RETURN_IF_FAULTY (M) ;                                                  \
     ASSERT (GB_VECTOR_OK (w)) ;                                                \
     ASSERT (GB_IMPLIES (M != NULL, GB_VECTOR_OK (M))) ;                        \
-    GrB_Info info = (GB_subassign_scalar ((GrB_Matrix) w, (GrB_Matrix) M,      \
+    GrB_Info info = GB_subassign_scalar ((GrB_Matrix) w, (GrB_Matrix) M,       \
         accum, ampersand x, GB_## T ## _code, Rows, nRows, GrB_ALL, 1, desc,   \
-        Context)) ;                                                            \
+        Context) ;                                                             \
     GB_BURBLE_END ;                                                            \
     return (info) ;                                                            \
 }
@@ -70,9 +71,10 @@ GB_ASSIGN_SCALAR (void *    , UDT    ,  )
 //  GxB_Vector_subassign (w, M, accum, S, Rows, nRows, desc) ;
 //  GrB_Vector_free (&S) ;
 
-#define GB_FREE_ALL GB_phbix_free (S) ;
+#undef  GB_FREE_ALL
+#define GB_FREE_ALL GB_Matrix_free (&S) ;
+#include "GB_static_header.h"
 
-GB_PUBLIC
 GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
 (
     GrB_Vector w,                   // input/output matrix for results
@@ -96,6 +98,7 @@ GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
     GB_RETURN_IF_NULL_OR_FAULTY (w) ;
     GB_RETURN_IF_NULL_OR_FAULTY (scalar) ;
     GB_RETURN_IF_FAULTY (M_in) ;
+    GB_RETURN_IF_NULL (I) ;
     ASSERT (GB_VECTOR_OK (w)) ;
     ASSERT (M_in == NULL || GB_VECTOR_OK (M_in)) ;
 
@@ -112,7 +115,29 @@ GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
 
     GrB_Index nvals ;
     GB_OK (GB_nvals (&nvals, (GrB_Matrix) scalar, Context)) ;
-    if (nvals == 1)
+
+    if (M == NULL && !Mask_comp && ni == 1 && !C_replace)
+    {
+
+        //----------------------------------------------------------------------
+        // scalar assignment
+        //----------------------------------------------------------------------
+
+        const GrB_Index row = I [0] ;
+        if (nvals == 1)
+        { 
+            // set the element: w(row) += scalar or w(wrow) = scalar
+            info = GB_setElement ((GrB_Matrix) w, accum, scalar->x, row, 0,
+                scalar->type->code, Context) ;
+        }
+        else if (accum == NULL)
+        { 
+            // delete the w(row) element
+            info = GB_Vector_removeElement (w, row, Context) ;
+        }
+
+    }
+    else if (nvals == 1)
     { 
 
         //----------------------------------------------------------------------
@@ -121,7 +146,7 @@ GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
 
         // This is identical to non-opaque scalar assignment
 
-        info = (GB_subassign (
+        info = GB_subassign (
             (GrB_Matrix) w, C_replace,  // w vector and its descriptor
             M, Mask_comp, Mask_struct,  // mask vector and its descriptor
             false,                      // do not transpose the mask
@@ -132,7 +157,7 @@ GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
             true,                       // do scalar expansion
             scalar->x,                  // scalar to assign, expands to become u
             scalar->type->code,         // type code of scalar to expand
-            Context)) ;
+            Context) ;
 
     }
     else
@@ -149,9 +174,10 @@ GrB_Info GxB_Vector_subassign_Scalar   // w<Mask>(I) = accum (w(I),s)
 
         // create an empty matrix S of the right size, and use matrix assign
         struct GB_Matrix_opaque S_header ;
-        S = GB_clear_static_header (&S_header) ;
-        GB_OK (GB_new (&S, true, scalar->type, nRows, 1, GB_Ap_calloc,
-            true, GxB_AUTO_SPARSITY, GB_HYPER_SWITCH_DEFAULT, 1, Context)) ;
+        GB_CLEAR_STATIC_HEADER (S, &S_header) ;
+        GB_OK (GB_new (&S,  // existing header
+            scalar->type, nRows, 1, GB_Ap_calloc, true, GxB_AUTO_SPARSITY,
+            GB_HYPER_SWITCH_DEFAULT, 1, Context)) ;
         info = GB_subassign (
             (GrB_Matrix) w, C_replace,      // w vector and its descriptor
             M, Mask_comp, Mask_struct,      // mask matrix and its descriptor

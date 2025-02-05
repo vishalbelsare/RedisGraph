@@ -2,7 +2,7 @@
 // GxB_deserialize_type_name: return the name of a type
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -48,10 +48,10 @@ GrB_Info GxB_deserialize_type_name  // return the type name of a blob
     //--------------------------------------------------------------------------
 
     size_t s = 0 ;
-    GB_BLOB_READ (blob_size2, size_t) ;
+    GB_BLOB_READ (blob_size2, uint64_t) ;
     GB_BLOB_READ (typecode, int32_t) ;
 
-    if (blob_size2 != (size_t) blob_size)
+    if (blob_size2 != blob_size)
     { 
         // blob is invalid
         return (GrB_INVALID_OBJECT) ;

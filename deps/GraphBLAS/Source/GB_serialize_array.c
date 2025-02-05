@@ -2,18 +2,19 @@
 // GB_serialize_array: serialize an array, with optional compression
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 // Parallel compression method for an array.  The array is compressed into
 // a sequence of independently allocated blocks, or returned as-is if not
-// compressed.  Currently, only LZ4 is supported.
+// compressed.  Currently, only LZ4, LZ4HC, and ZSTD are supported.
 
 #include "GB.h"
 #include "GB_serialize.h"
 #include "GB_lz4.h"
+#include "GB_zstd.h"
 
 #define GB_FREE_ALL                                                     \
 {                                                                       \
@@ -37,7 +38,6 @@ GrB_Info GB_serialize_array
     GB_void *X,                         // input array of size len
     int64_t len,                        // size of X, in bytes
     int32_t method,                     // compression method requested
-    bool intel,                         // if true, use Intel IPPS
     int32_t algo,                       // compression algorithm
     int32_t level,                      // compression level
     GB_Context Context
@@ -48,7 +48,6 @@ GrB_Info GB_serialize_array
     // check inputs
     //--------------------------------------------------------------------------
 
-    GrB_Info info ;
     ASSERT (Blocks_handle != NULL) ;
     ASSERT (Blocks_size_handle != NULL) ;
     ASSERT (Sblocks_handle != NULL) ;
@@ -97,11 +96,11 @@ GrB_Info GB_serialize_array
             }
 
             Blocks [0].p = X ;          // first block is all of the array X
-            Blocks [0].p_size = 0 ;     // denotes that p is a shallow copy of X
+            Blocks [0].p_size_allocated = 0 ;   // p is shallow
             Sblocks [0] = 0 ;           // start of first block
 
             Blocks [1].p = NULL ;       // 2nd block is the final sentinel
-            Blocks [1].p_size = 0 ;
+            Blocks [1].p_size_allocated = 0 ;   // p is shallow
             Sblocks [1] = len ;         // first block ends at len-1
 
             (*Blocks_handle) = Blocks ;
@@ -132,6 +131,7 @@ GrB_Info GB_serialize_array
     int64_t blocksize = (nthreads == 1) ? len : GB_ICEIL (len, 4*nthreads) ;
 
     // ensure the blocksize does not exceed the LZ4 maximum
+    // ... this is also fine for ZSTD
     ASSERT (LZ4_MAX_INPUT_SIZE < INT32_MAX) ;
     blocksize = GB_IMIN (blocksize, LZ4_MAX_INPUT_SIZE/2) ;
 
@@ -167,9 +167,21 @@ GrB_Info GB_serialize_array
         size_t uncompressed = kend - kstart ;
         ASSERT (uncompressed < INT32_MAX) ;
         ASSERT (uncompressed > 0) ;
-        size_t s = (size_t) LZ4_compressBound ((int) uncompressed) ;
+
+        size_t s ;
+        switch (algo)
+        {
+            case GxB_COMPRESSION_LZ4 : 
+            case GxB_COMPRESSION_LZ4HC : 
+                s = (size_t) LZ4_compressBound ((int) uncompressed) ;
+                break ;
+            default :
+            case GxB_COMPRESSION_ZSTD : 
+                s = ZSTD_compressBound (uncompressed) ;
+                break ;
+        }
+
         ASSERT (s < INT32_MAX) ;
-        size_t p_size = 0 ;
         if (dryrun)
         { 
             // do not allocate the block; just sum up the upper bound sizes
@@ -178,10 +190,11 @@ GrB_Info GB_serialize_array
         else
         { 
             // allocate the block
-            GB_void *p = GB_MALLOC (s, GB_void, &p_size) ;
+            size_t size_allocated = 0 ;
+            GB_void *p = GB_MALLOC (s, GB_void, &size_allocated) ;
             ok = (p != NULL) ;
             Blocks [blockid].p = p ;
-            Blocks [blockid].p_size = p_size ;
+            Blocks [blockid].p_size_allocated = size_allocated ;
         }
     }
 
@@ -215,29 +228,42 @@ GrB_Info GB_serialize_array
         const char *src = (const char *) (X + kstart) ;     // source
         char *dst = (char *) Blocks [blockid].p ;           // destination
         int srcSize = (int) (kend - kstart) ;               // size of source
-        size_t dsize = Blocks [blockid].p_size ;            // size of dest
+        size_t dsize = Blocks [blockid].p_size_allocated ;  // size of dest
         int dstCapacity = GB_IMIN (dsize, INT32_MAX) ;
         int s ;
+        size_t s64 ;
         switch (algo)
         {
-            default :
+
             case GxB_COMPRESSION_LZ4 : 
                 s = LZ4_compress_default (src, dst, srcSize, dstCapacity) ;
+                ok = ok && (s > 0) ;
+                // compressed block is now in dst [0:s-1], of size s
+                Sblocks [blockid] = (int64_t) s ;
                 break ;
+
             case GxB_COMPRESSION_LZ4HC : 
                 s = LZ4_compress_HC (src, dst, srcSize, dstCapacity, level) ;
+                ok = ok && (s > 0) ;
+                // compressed block is now in dst [0:s-1], of size s
+                Sblocks [blockid] = (int64_t) s ;
+                break ;
+
+            default :
+            case GxB_COMPRESSION_ZSTD : 
+                s64 = ZSTD_compress (dst, dstCapacity, src, srcSize, level) ;
+                ok = ok && (s64 <= dstCapacity) ;
+                // compressed block is now in dst [0:s64-1], of size s64
+                Sblocks [blockid] = (int64_t) s64 ;
                 break ;
         }
-        ok = ok && (s > 0) ;
-        // compressed block is now in dst [0:s-1], of size s
-        Sblocks [blockid] = (int64_t) s ;
     }
 
     if (!ok)
     {
         // compression failure: this can "never" occur
         GB_FREE_ALL ;
-        return (GrB_INVALID_OBJECT) ;   // TODO: find a better error code
+        return (GrB_INVALID_OBJECT) ;
     }
 
     //--------------------------------------------------------------------------

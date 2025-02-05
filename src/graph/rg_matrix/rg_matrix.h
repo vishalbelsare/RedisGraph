@@ -1,26 +1,20 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
+#include "RG.h"
+#include "GraphBLAS.h"
+
 #include <pthread.h>
-#include "../../deps/GraphBLAS/Include/GraphBLAS.h"
 
 // forward declaration of RG_Matrix type
 typedef struct _RG_Matrix _RG_Matrix;
 typedef _RG_Matrix *RG_Matrix;
 
-// Mask with most significant bit on 10000...
-#define MSB_MASK (1UL << (sizeof(uint64_t) * 8 - 1))
-// Mask complement 01111...
-#define MSB_MASK_CMP ~MSB_MASK
-// Set X's most significant bit on.
-#define SET_MSB(x) (x) | MSB_MASK
-// Clear X's most significant bit.
-#define CLEAR_MSB(x) (x) & MSB_MASK_CMP
 // Checks if X represents edge ID.
 #define SINGLE_EDGE(x) !((x) & MSB_MASK)
 
@@ -125,7 +119,7 @@ typedef _RG_Matrix *RG_Matrix;
 //------------------------------------------------------------------------------
 
 struct _RG_Matrix {
-	bool dirty;                         // Indicates if matrix requires sync
+	volatile bool dirty;                // Indicates if matrix requires sync
 	GrB_Matrix matrix;                  // Underlying GrB_Matrix
 	GrB_Matrix delta_plus;              // Pending additions
 	GrB_Matrix delta_minus;             // Pending deletions
@@ -156,6 +150,14 @@ void RG_Matrix_setDirty
 bool RG_Matrix_isDirty
 (
 	const RG_Matrix C
+);
+
+// checks if C is fully synced
+// a synced delta matrix does not contains any entries in
+// either its delta-plus and delta-minus internal matrices
+bool RG_Matrix_Synced
+(
+	const RG_Matrix C  // matrix to inquery
 );
 
 // locks the matrix
@@ -242,12 +244,13 @@ GrB_Info RG_Matrix_removeElement_UINT64
 );
 
 // remove value 'v' from multi-value entry at position C[i,j]
-GrB_Info RG_Matrix_removeEntry
+GrB_Info RG_Matrix_removeEntry_UINT64
 (
 	RG_Matrix C,                    // matrix to remove entry from
 	GrB_Index i,                    // row index
 	GrB_Index j,                    // column index
-	uint64_t  v                     // value to remove
+	uint64_t  v,                    // value to remove
+	bool     *entry_deleted         // is entry deleted
 );
 
 GrB_Info RG_mxm                     // C = A * B
@@ -295,6 +298,13 @@ GrB_Info RG_Matrix_wait
 (
 	RG_Matrix C,
 	bool force_sync
+);
+
+// get the type of the M matrix
+GrB_Info RG_Matrix_type
+(
+	GrB_Type *type,
+	RG_Matrix A
 );
 
 void RG_Matrix_free

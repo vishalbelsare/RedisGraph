@@ -49,11 +49,13 @@ deps/GraphBLAS/Config/GraphBLAS.h.tmp
 
 # Additional suffixes
 *.pyc
-*.cmake
-*.make
 *.xml
 *.iml
 *.d
+
+# test result files
+/tests/flow/logs/
+/tests/tck/logs/
 
 # local/remote benchmark result files
 /tests/benchmarks/*.json
@@ -62,3 +64,6 @@ deps/GraphBLAS/Config/GraphBLAS.h.tmp
 *.gcda
 *.gcno
 /cov/
+/venv/
+/.vscode/
+/1/

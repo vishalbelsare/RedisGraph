@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -112,7 +112,6 @@ Feature: ReturnSkipLimit1 - Skip
       | n |
     And no side effects
 
-  @NegativeTest
   Scenario: [5] SKIP with an expression that depends on variables should fail
     Given any graph
     When executing query:
@@ -121,7 +120,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at compile time: NonConstantExpression
 
-  @NegativeTest
   @skip
   Scenario: [6] Negative parameter for SKIP should fail
     Given any graph
@@ -140,8 +138,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at runtime: NegativeIntegerArgument
 
-  @NegativeTest
-  @skip
   Scenario: [7] Negative SKIP should fail
     Given any graph
     And having executed:
@@ -157,7 +153,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at compile time: NegativeIntegerArgument
 
-  @NegativeTest
   @skip
   Scenario: [8] Floating point parameter for SKIP should fail
     Given any graph
@@ -176,7 +171,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at runtime: InvalidArgumentType
 
-  @NegativeTest
   @skip
   Scenario: [9] Floating point SKIP should fail
     Given any graph
@@ -193,8 +187,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at compile time: InvalidArgumentType
 
-  @NegativeTest
-  @skip
   Scenario: [10] Fail when using non-constants in SKIP
     Given any graph
     When executing query:
@@ -205,8 +197,6 @@ Feature: ReturnSkipLimit1 - Skip
       """
     Then a SyntaxError should be raised at compile time: NonConstantExpression
 
-  @NegativeTest
-  @skip
   Scenario: [11] Fail when using negative value in SKIP
     Given any graph
     When executing query:

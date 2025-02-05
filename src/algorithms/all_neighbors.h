@@ -1,12 +1,13 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
 #include "../../deps/GraphBLAS/Include/GraphBLAS.h"
+#include "../util/dict.h"
 #include "../graph/rg_matrix/rg_matrix.h"
 #include "../graph/rg_matrix/rg_matrix_iter.h"
 #include "../graph/entities/node.h"
@@ -25,10 +26,11 @@ typedef struct {
 	RG_Matrix M;                   // adjacency matrix
 	uint minLen;                   // minimum required depth
 	uint maxLen;                   // maximum allowed depth
-	int current_level;             // cuurent depth
+	int current_level;             // current depth
 	bool first_pull;               // first call to Next
 	EntityID *visited;             // visited nodes
 	RG_MatrixTupleIter *levels;    // array of neighbors iterator
+	dict *visited_nodes;           // visited nodes
 } AllNeighborsCtx;
 
 void AllNeighborsCtx_Reset

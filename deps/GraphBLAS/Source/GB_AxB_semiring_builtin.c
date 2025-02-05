@@ -2,7 +2,7 @@
 // GB_AxB_semiring_builtin:  determine if semiring is built-in
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -38,6 +38,14 @@ bool GB_AxB_semiring_builtin        // true if semiring is builtin
     //--------------------------------------------------------------------------
     // check inputs
     //--------------------------------------------------------------------------
+
+    if (flipxy)
+    {
+        // quick return.  All built-in semirings have been handled already
+        // in GB_AxB_meta, and flipxy is now false.  If flipxy is still true,
+        // the semiring is not built-in.
+        return (false) ;
+    }
 
     // A and B may be aliased
 

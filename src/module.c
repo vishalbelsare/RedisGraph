@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include <unistd.h>
 #include <pthread.h>
@@ -10,17 +10,19 @@
 #include "debug.h"
 #include "errors.h"
 #include "version.h"
+#include "globals.h"
 #include "util/arr.h"
-#include "util/cron.h"
+#include "cron/cron.h"
 #include "query_ctx.h"
+#include "index/indexer.h"
 #include "redisearch_api.h"
 #include "arithmetic/funcs.h"
 #include "commands/commands.h"
 #include "util/thpool/pools.h"
 #include "graph/graphcontext.h"
 #include "util/redis_version.h"
+#include "ast/ast_validations.h"
 #include "configuration/config.h"
-#include "ast/cypher_whitelist.h"
 #include "procedures/procedure.h"
 #include "module_event_handlers.h"
 #include "serializers/graphmeta_type.h"
@@ -28,20 +30,10 @@
 #include "serializers/graphcontext_type.h"
 #include "arithmetic/arithmetic_expression.h"
 
-//------------------------------------------------------------------------------
-// Minimal supported Redis version
-//------------------------------------------------------------------------------
+// minimal supported Redis version
 #define MIN_REDIS_VERION_MAJOR 6
-#define MIN_REDIS_VERION_MINOR 0
+#define MIN_REDIS_VERION_MINOR 2
 #define MIN_REDIS_VERION_PATCH 0
-
-//------------------------------------------------------------------------------
-// Module-level global variables
-//------------------------------------------------------------------------------
-GraphContext **graphs_in_keyspace;  // Global array tracking all extant GraphContexts.
-bool process_is_child;              // Flag indicating whether the running process is a child.
-
-extern CommandCtx **command_ctxs;
 
 static int _RegisterDataTypes(RedisModuleCtx *ctx) {
 	if(GraphContextType_Register(ctx) == REDISMODULE_ERR) {
@@ -56,9 +48,34 @@ static int _RegisterDataTypes(RedisModuleCtx *ctx) {
 	return REDISMODULE_OK;
 }
 
-static void _PrepareModuleGlobals(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-	graphs_in_keyspace = array_new(GraphContext *, 1);
-	process_is_child = false;
+// starts cron and register recurring tasks
+static bool _Cron_Start(void) {
+	// start CRON
+	bool res = Cron_Start();
+
+	// register recurring tasks
+	Cron_AddRecurringTasks();
+
+	return res;
+}
+
+// print RedisGraph configuration
+static void _Print_Config
+(
+	RedisModuleCtx *ctx
+) {
+	// TODO: consider adding Config_Print
+
+	int ompThreadCount;
+	Config_Option_get(Config_OPENMP_NTHREAD, &ompThreadCount);
+	RedisModule_Log(ctx, "notice", "Maximum number of OpenMP threads set to %d", ompThreadCount);
+
+	bool cmd_info_enabled = false;
+	if(Config_Option_get(Config_CMD_INFO, &cmd_info_enabled) && cmd_info_enabled) {
+		uint32_t info_max_query_count = 0;
+		Config_Option_get(Config_CMD_INFO_MAX_QUERY_COUNT, &info_max_query_count);
+		RedisModule_Log(ctx, "notice", "Query backlog size: %u", info_max_query_count);
+	}
 }
 
 static int GraphBLAS_Init(RedisModuleCtx *ctx) {
@@ -101,11 +118,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 	RedisModule_Log(ctx, "notice", "Starting up RedisGraph version %d.%d.%d.",
 					REDISGRAPH_VERSION_MAJOR, REDISGRAPH_VERSION_MINOR, REDISGRAPH_VERSION_PATCH);
 
-	Proc_Register();         // Register procedures.
-	AR_RegisterFuncs();      // Register arithmetic functions.
-	Cron_Start();            // Start CRON
-	// Set up global lock and variables scoped to the entire module.
-	_PrepareModuleGlobals(ctx, argv, argc);
+	Proc_Register();     // register procedures
+	AR_RegisterFuncs();  // register arithmetic functions
 
 	// set up the module's configurable variables,
 	// using user-defined values where provided
@@ -114,12 +128,14 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 	if(Config_Init(ctx, argv, argc) != REDISMODULE_OK) return REDISMODULE_ERR;
 
 	RegisterEventHandlers(ctx);
-	CypherWhitelist_Build(); // Build whitelist of supported Cypher elements.
 
-	// Create thread local storage keys for query and error contexts.
-	if(!QueryCtx_Init())    return REDISMODULE_ERR;
-	if(!ErrorCtx_Init())    return REDISMODULE_ERR;
-	if(!ThreadPools_Init()) return REDISMODULE_ERR;
+	// create thread local storage keys for query and error contexts
+	if(!_Cron_Start())                return REDISMODULE_ERR;
+	if(!QueryCtx_Init())              return REDISMODULE_ERR;
+	if(!ErrorCtx_Init())              return REDISMODULE_ERR;
+	if(!ThreadPools_Init())           return REDISMODULE_ERR;
+	if(!Indexer_Init())               return REDISMODULE_ERR;
+	if(!AST_ValidationsMappingInit()) return REDISMODULE_ERR;
 
 	RedisModule_Log(ctx, "notice", "Thread pool created, using %d threads.",
 			ThreadPools_ReadersCount());
@@ -131,10 +147,9 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 		RedisModule_Log(ctx, "warning", "Failed to set OpenMP thread count to %d", ompThreadCount);
 		return REDISMODULE_ERR;
 	}
-	RedisModule_Log(ctx, "notice", "Maximum number of OpenMP threads set to %d", ompThreadCount);
 
-	// initialize array of command contexts
-	command_ctxs = calloc(ThreadPools_ThreadCount() + 1, sizeof(CommandCtx *));
+	// log configuration
+	_Print_Config(ctx);
 
 	if(_RegisterDataTypes(ctx) != REDISMODULE_OK) return REDISMODULE_ERR;
 
@@ -168,7 +183,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 		return REDISMODULE_ERR;
 	}
 
-	if(RedisModule_CreateCommand(ctx, "graph.SLOWLOG", CommandDispatch, "readonly", 1, 1,
+	if(RedisModule_CreateCommand(ctx, "graph.CONSTRAINT", Graph_Constraint, "write deny-oom", 2, 2,
+								 1) == REDISMODULE_ERR) {
+		return REDISMODULE_ERR;
+	}
+
+	if(RedisModule_CreateCommand(ctx, "graph.SLOWLOG", Graph_Slowlog, "readonly", 1, 1,
 								 1) == REDISMODULE_ERR) {
 		return REDISMODULE_ERR;
 	}
@@ -187,6 +207,19 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 								 0) == REDISMODULE_ERR) {
 		return REDISMODULE_ERR;
 	}
+
+	if(RedisModule_CreateCommand(ctx, "graph.INFO", Graph_Info, "readonly", 1, 1,
+				1) == REDISMODULE_ERR) {
+		return REDISMODULE_ERR;
+	}
+
+	if(RedisModule_CreateCommand(ctx, "graph.EFFECT", Graph_Effect, "write", 1,
+				1, 1) == REDISMODULE_ERR) {
+		return REDISMODULE_ERR;
+	}
+
+	// set up global variables scoped to the entire module
+	Globals_Init();
 
 	setupCrashHandlers(ctx);
 

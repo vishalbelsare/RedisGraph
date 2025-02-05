@@ -1,16 +1,16 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "execution_plan.h"
 #include "../RG.h"
 #include "./ops/ops.h"
-#include "../errors.h"
 #include "../util/arr.h"
 #include "../query_ctx.h"
 #include "../util/rmalloc.h"
+#include "../errors/errors.h"
 #include "./optimizations/optimizer.h"
 #include "../ast/ast_build_filter_tree.h"
 #include "execution_plan_build/execution_plan_modify.h"
@@ -29,7 +29,9 @@ void ExecutionPlan_PopulateExecutionPlan(ExecutionPlan *plan) {
 
 	// Initialize the plan's record mapping if necessary.
 	// It will already be set if this ExecutionPlan has been created to populate a single stream.
-	if(plan->record_map == NULL) plan->record_map = raxNew();
+	if(plan->record_map == NULL) {
+		plan->record_map = raxNew();
+	}
 
 	// Build query graph
 	// Query graph is set if this ExecutionPlan has been created to populate a single stream.
@@ -52,15 +54,15 @@ static ExecutionPlan *_ExecutionPlan_UnionPlans(AST *ast) {
 	int union_count = array_len(union_indices);
 	ASSERT(union_count > 1);
 
-	/* Placeholder for each execution plan, these all will be joined
-	 * via a single UNION operation. */
+	// Placeholder for each execution plan, these all will be joined
+	// via a single UNION operation
 	ExecutionPlan *plans[union_count];
 
 	for(int i = 0; i < union_count; i++) {
 		// Create an AST segment from which we will build an execution plan.
 		end_offset = union_indices[i];
 		AST *ast_segment = AST_NewSegment(ast, start_offset, end_offset);
-		plans[i] = NewExecutionPlan();
+		plans[i] = ExecutionPlan_FromTLS_AST();
 		AST_Free(ast_segment); // Free the AST segment.
 
 		// Next segment starts where this one ends.
@@ -130,16 +132,6 @@ static ExecutionPlan *_ExecutionPlan_UnionPlans(AST *ast) {
 	return plan;
 }
 
-static OpBase *_ExecutionPlan_FindLastWriter(OpBase *root) {
-	if(OpBase_IsWriter(root)) return root;
-	for(int i = root->childCount - 1; i >= 0; i--) {
-		OpBase *child = root->children[i];
-		OpBase *res = _ExecutionPlan_FindLastWriter(child);
-		if(res) return res;
-	}
-	return NULL;
-}
-
 static ExecutionPlan *_process_segment(AST *ast, uint segment_start_idx,
 									   uint segment_end_idx) {
 	ASSERT(ast != NULL);
@@ -171,9 +163,9 @@ static ExecutionPlan **_process_segments(AST *ast) {
 	// bound segments
 	//--------------------------------------------------------------------------
 
-	/* retrieve the indices of each WITH clause to properly set
-	 * the segment's bounds.
-	 * Every WITH clause demarcates the beginning of a new segment. */
+	// retrieve the indices of each WITH clause to properly set
+	// the segment's bounds.
+	// Every WITH clause demarcates the beginning of a new segment
 	segment_indices = AST_GetClauseIndices(ast, CYPHER_AST_WITH);
 
 	// last segment
@@ -209,6 +201,29 @@ static ExecutionPlan **_process_segments(AST *ast) {
 	return segments;
 }
 
+static bool _ExecutionPlan_HasLocateTaps
+(
+	OpBase *root
+) {
+	if((root->childCount == 0 && root->type != OPType_ARGUMENT &&
+		root->type != OPType_ARGUMENT_LIST) ||
+		// when Foreach or Call {} have a single child, they don't need a tap
+		(root->childCount == 1 &&
+			(root->type == OPType_FOREACH || root->type == OPType_CALLSUBQUERY))
+		) {
+			return true;
+	}
+
+	// recursively visit children
+	for(int i = 0; i < root->childCount; i++) {
+		if(_ExecutionPlan_HasLocateTaps(root->children[i])) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static ExecutionPlan *_tie_segments
 (
 	ExecutionPlan **segments,
@@ -229,12 +244,19 @@ static ExecutionPlan *_tie_segments
 		ExecutionPlan *segment = segments[i];
 		AST *ast = segment->ast_segment;
 
-		// find the firstmost non-argument operation in this segment
+		// find the first non-argument op with no children in this segment
 		prev_connecting_op = connecting_op;
-		OpBase **taps = ExecutionPlan_LocateTaps(segment);
-		ASSERT(array_len(taps) > 0);
-		connecting_op = taps[0];
-		array_free(taps);
+		// in the case of a single segment with FOREACH as its root, there is no
+		// tap (of the current definition)
+		// for instance: FOREACH(i in [i] | CREATE (n:N))
+		// in any other case, there must be a tap
+
+		ASSERT(_ExecutionPlan_HasLocateTaps(segment->root) == true);
+
+		connecting_op = segment->root;
+		while(connecting_op->childCount > 0) {
+			connecting_op = connecting_op->children[0];
+		}
 
 		// tie the current segment's tap to the previous segment's root op
 		if(prev_segment != NULL) {
@@ -325,7 +347,7 @@ static inline void _implicit_result(ExecutionPlan *plan) {
 	}
 }
 
-ExecutionPlan *NewExecutionPlan(void) {
+ExecutionPlan *ExecutionPlan_FromTLS_AST(void) {
 	AST *ast = QueryCtx_GetAST();
 
 	// handle UNION if there are any
@@ -355,7 +377,6 @@ void ExecutionPlan_PreparePlan(ExecutionPlan *plan) {
 	// Plan should be prepared only once.
 	ASSERT(!plan->prepared);
 	optimizePlan(plan);
-	QueryCtx_SetLastWriter(_ExecutionPlan_FindLastWriter(plan->root));
 	plan->prepared = true;
 }
 
@@ -375,7 +396,7 @@ Record ExecutionPlan_BorrowRecord(ExecutionPlan *plan) {
 	return r;
 }
 
-void ExecutionPlan_ReturnRecord(ExecutionPlan *plan, Record r) {
+void ExecutionPlan_ReturnRecord(const ExecutionPlan *plan, Record r) {
 	ASSERT(plan && r);
 	ObjectPool_DeleteItem(plan->record_pool, r);
 }
@@ -386,8 +407,8 @@ void ExecutionPlan_ReturnRecord(ExecutionPlan *plan, Record r) {
 
 static inline void _ExecutionPlan_InitRecordPool(ExecutionPlan *plan) {
 	if(plan->record_pool) return;
-	/* Initialize record pool.
-	 * Determine Record size to inform ObjectPool allocation. */
+	// Initialize record pool.
+	// Determine Record size to inform ObjectPool allocation
 	uint entries_count = raxSize(plan->record_map);
 	uint rec_size = sizeof(_Record) + (sizeof(Entry) * entries_count);
 
@@ -414,9 +435,9 @@ void ExecutionPlan_Init(ExecutionPlan *plan) {
 
 ResultSet *ExecutionPlan_Execute(ExecutionPlan *plan) {
 	ASSERT(plan->prepared)
-	/* Set an exception-handling breakpoint to capture run-time errors.
-	 * encountered_error will be set to 0 when setjmp is invoked, and will be nonzero if
-	 * a downstream exception returns us to this breakpoint. */
+	// Set an exception-handling breakpoint to capture run-time errors.
+	// encountered_error will be set to 0 when setjmp is invoked, and will be nonzero if
+	// a downstream exception returns us to this breakpoint
 	int encountered_error = SET_EXCEPTION_HANDLER();
 
 	// Encountered a run-time error - return immediately.
@@ -503,57 +524,88 @@ ResultSet *ExecutionPlan_Profile(ExecutionPlan *plan) {
 // Execution plan free functions
 //------------------------------------------------------------------------------
 
-static void _ExecutionPlan_FreeInternals(ExecutionPlan *plan) {
+static void _ExecutionPlan_FreeInternals
+(
+	ExecutionPlan *plan
+) {
 	if(plan == NULL) return;
 
-	if(plan->connected_components) {
-		uint connected_component_count = array_len(plan->connected_components);
-		for(uint i = 0; i < connected_component_count; i ++) {
-			QueryGraph_Free(plan->connected_components[i]);
-		}
-		array_free(plan->connected_components);
+	if(plan->query_graph) {
+		QueryGraph_Free(plan->query_graph);
 	}
-
-	QueryGraph_Free(plan->query_graph);
-	if(plan->record_map) raxFree(plan->record_map);
-	if(plan->record_pool) ObjectPool_Free(plan->record_pool);
-	if(plan->ast_segment) AST_Free(plan->ast_segment);
+	if(plan->record_map != NULL) {
+		raxFree(plan->record_map);
+	}
+	if(plan->record_pool != NULL) {
+		ObjectPool_Free(plan->record_pool);
+	}
+	if(plan->ast_segment != NULL) {
+		AST_Free(plan->ast_segment);
+	}
 	rm_free(plan);
 }
 
-// Free an op tree and its associated ExecutionPlan segments.
-static ExecutionPlan *_ExecutionPlan_FreeOpTree(OpBase *op) {
-	if(op == NULL) return NULL;
-	ExecutionPlan *child_plan = NULL;
-	ExecutionPlan *prev_child_plan = NULL;
-	// Store a reference to the current plan.
-	ExecutionPlan *current_plan = (ExecutionPlan *)op->plan;
-	for(uint i = 0; i < op->childCount; i ++) {
-		child_plan = _ExecutionPlan_FreeOpTree(op->children[i]);
-		// In most cases all children will share the same plan, but if they don't
-		// (for an operation like UNION) then free the now-obsolete previous child plan.
-		if(prev_child_plan != child_plan) {
-			_ExecutionPlan_FreeInternals(prev_child_plan);
-			prev_child_plan = child_plan;
-		}
+// free the execution plans and all of the operations
+void ExecutionPlan_Free
+(
+	ExecutionPlan *plan
+) {
+	ASSERT(plan != NULL);
+	if(plan->root == NULL) {
+		_ExecutionPlan_FreeInternals(plan);
+		return;
 	}
 
-	// Free this op.
-	OpBase_Free(op);
+	// -------------------------------------------------------------------------
+	// free op tree and collect execution-plans
+	// -------------------------------------------------------------------------
 
-	// Free each ExecutionPlan segment once all ops associated with it have been freed.
-	if(current_plan != child_plan) _ExecutionPlan_FreeInternals(child_plan);
+	// traverse the execution-plan graph (DAG -> no endless cycles), while
+	// collecting the different segments, and freeing the op tree
+	dict *plans = HashTableCreate(&def_dt);
+	OpBase **visited = array_new(OpBase *, 1);
+	OpBase **to_visit = array_new(OpBase *, 1);
 
-	return current_plan;
+	OpBase *op = plan->root;
+	array_append(to_visit, op);
+
+	while(array_len(to_visit) > 0) {
+		op = array_pop(to_visit);
+
+		// add the plan this op is affiliated with
+		HashTableAdd(plans, (void *)op->plan, (void *)op->plan);
+
+		// add all direct children of op to to_visit
+		for(uint i = 0; i < op->childCount; i++) {
+			if(op->children[i] != NULL) {
+				array_append(to_visit, op->children[i]);
+			}
+		}
+
+		// add op to `visited` array
+		array_append(visited, op);
+	}
+
+	// free the collected ops
+	for(int i = array_len(visited)-1; i >= 0; i--) {
+		op = visited[i];
+		OpBase_Free(op);
+	}
+	array_free(visited);
+	array_free(to_visit);
+
+	// -------------------------------------------------------------------------
+	// free internals of the plans
+	// -------------------------------------------------------------------------
+
+	dictEntry *entry;
+	ExecutionPlan *curr_plan;
+	dictIterator *it = HashTableGetIterator(plans);
+	while((entry = HashTableNext(it)) != NULL) {
+		curr_plan = (ExecutionPlan *)HashTableGetVal(entry);
+		_ExecutionPlan_FreeInternals(curr_plan);
+	}
+
+	HashTableReleaseIterator(it);
+	HashTableRelease(plans);
 }
-
-void ExecutionPlan_Free(ExecutionPlan *plan) {
-	if(plan == NULL) return;
-
-	// Free all ops and ExecutionPlan segments.
-	_ExecutionPlan_FreeOpTree(plan->root);
-
-	// Free the final ExecutionPlan segment.
-	_ExecutionPlan_FreeInternals(plan);
-}
-

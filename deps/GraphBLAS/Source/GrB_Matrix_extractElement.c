@@ -2,7 +2,7 @@
 // GrB_Matrix_extractElement: extract a single entry from a matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -195,5 +195,8 @@ GrB_Info GrB_Matrix_extractElement_Scalar   // S = A(i,j)
 #define GB_EXTRACT_ELEMENT GrB_Matrix_extractElement_UDT
 #define GB_XTYPE void
 #define GB_XCODE GB_UDT_code
+#include "GB_Matrix_extractElement.c"
+
+#define GB_EXTRACT_ELEMENT GxB_Matrix_isStoredElement
 #include "GB_Matrix_extractElement.c"
 

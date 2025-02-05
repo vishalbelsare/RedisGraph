@@ -1,17 +1,15 @@
-import redis
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-from base import FlowTestsBase
+from common import *
 
 GRAPH_ID = "union_test"
 redis_graph = None
+
 
 class testUnion(FlowTestsBase):
     def __init__(self):
         self.env = Env(decodeResponses=True)
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
 
     def populate_graph(self):
@@ -144,3 +142,40 @@ class testUnion(FlowTestsBase):
                    UNWIND range(1, 3) AS b RETURN b"""
         result = redis_graph.query(query)
         self.env.assertEquals(result.result_set, expected_result)
+
+    def test08_union_with_index_scan(self):
+        query = """UNWIND range(10,20) AS i 
+                   CREATE (n:N {v:tostring(i)})-[:R]->(m:M {v:tostring(i+1)})"""
+        redis_graph.query(query)
+        query = """CREATE INDEX ON :N(v)"""
+        redis_graph.query(query)
+
+        # test MATCH and CREATE
+        query = """MATCH (n:N {v:'10'})-[:R]->(m:M) RETURN m.v AS p
+                   UNION
+                   MATCH (s:M {v:'12'}) CREATE (:N {v:'10'})-[:R]->(s) RETURN s.v AS p"""
+        result = redis_graph.query(query)
+        expected_result = [['11'],['12']]
+        self.env.assertEquals(result.result_set, expected_result)
+
+        # test MATCH, CREATE and MERGE
+        query = """MATCH (n:N {v:'10'})-[:R]->(:M) RETURN n.v AS p 
+                   UNION 
+                   MATCH (s:M {v:'12'}) CREATE (:N {v:'10'})-[:R]->(s) RETURN s.v AS p 
+                   UNION 
+                   MERGE(x:N {v:'15'})-[:R]->(:M {v:'18'}) RETURN x.v AS p"""
+        result = redis_graph.query(query)
+        expected_result = [['10'],['12'],['15']]
+        self.env.assertEquals(result.result_set, expected_result)
+
+    def test09_union_validation(self):
+        try:
+            query = """OPTIONAL MATCH (a:N)
+            RETURN a
+            UNION
+            MATCH (a:N)
+            RETURN a"""
+            redis_graph.query(query)
+            self.env.assertTrue(True)
+        except redis.exceptions.ResponseError:
+            self.env.assertTrue(False)

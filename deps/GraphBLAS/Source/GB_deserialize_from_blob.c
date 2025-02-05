@@ -2,7 +2,7 @@
 // GB_deserialize_from_blob: uncompress a set of blocks from the blob
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -16,6 +16,7 @@
 #include "GB.h"
 #include "GB_serialize.h"
 #include "GB_lz4.h"
+#include "GB_zstd.h"
 
 #define GB_FREE_ALL         \
 {                           \
@@ -35,7 +36,7 @@ GrB_Info GB_deserialize_from_blob
     int32_t nblocks,            // # of compressed blocks for this array
     int32_t method,             // compression method used for each block
     // input/output:
-    size_t *s_handle,           // location to write into the blob
+    size_t *s_handle,           // where to read from the blob
     GB_Context Context
 )
 {
@@ -44,7 +45,7 @@ GrB_Info GB_deserialize_from_blob
     // check inputs
     //--------------------------------------------------------------------------
 
-    GrB_Info info ;
+//  GrB_Info info ;
     ASSERT (blob != NULL) ;
     ASSERT (s_handle != NULL) ;
     ASSERT (X_handle != NULL) ;
@@ -56,17 +57,15 @@ GrB_Info GB_deserialize_from_blob
     // parse the method
     //--------------------------------------------------------------------------
 
-    bool intel ;
     int32_t algo, level ;
-    GB_serialize_method (&intel, &algo, &level, method) ;
-    // method = (intel ? GxB_COMPRESSION_INTEL : 0) + (algo) + (level) ;
+    GB_serialize_method (&algo, &level, method) ;
 
     //--------------------------------------------------------------------------
     // allocate the output array
     //--------------------------------------------------------------------------
 
     size_t X_size = 0 ;
-    GB_void *X = GB_MALLOC (X_len, GB_void, &X_size) ;
+    GB_void *X = GB_MALLOC (X_len, GB_void, &X_size) ;  // OK
     if (X == NULL)
     { 
         // out of memory
@@ -93,7 +92,7 @@ GrB_Info GB_deserialize_from_blob
         // no compression; the array is held in a single block
         //----------------------------------------------------------------------
 
-        if (nblocks != 1 || Sblocks [0] != X_len || s + X_len > blob_size)
+        if (nblocks > 1 || Sblocks [0] != X_len || s + X_len > blob_size)
         {
             // blob is invalid: guard against an unsafe memcpy
             ok = false ;
@@ -106,11 +105,12 @@ GrB_Info GB_deserialize_from_blob
         }
 
     }
-    else if (algo == GxB_COMPRESSION_LZ4 || algo == GxB_COMPRESSION_LZ4HC)
+    else if (algo == GxB_COMPRESSION_LZ4 || algo == GxB_COMPRESSION_LZ4HC
+        || algo == GxB_COMPRESSION_ZSTD)
     {
 
         //----------------------------------------------------------------------
-        // LZ4 / LZ4HC compression
+        // LZ4, LZ4HC, or ZSTD compression
         //----------------------------------------------------------------------
 
         int nthreads = GB_IMIN (nthreads_max, nblocks) ;
@@ -145,13 +145,27 @@ GrB_Info GB_deserialize_from_blob
                 // GB_deserialize, if requested.
                 const char *src = (const char *) (blob + s + s_start) ;
                 char *dst = (char *) (X + kstart) ;
-                int src_size = (int) s_size ;
-                int dst_size = (int) d_size ;
-                int u = LZ4_decompress_safe (src, dst, src_size, dst_size) ;
-                if (u != dst_size)
-                {
-                    // blob is invalid
-                    ok = false ;
+                if (algo == GxB_COMPRESSION_ZSTD)
+                { 
+                    // ZSTD
+                    size_t u = ZSTD_decompress (dst, d_size, src, s_size) ;
+                    if (u != d_size)
+                    {
+                        // blob is invalid
+                        ok = false ;
+                    }
+                }
+                else
+                { 
+                    // LZ4 or LZ4HC
+                    int src_size = (int) s_size ;
+                    int dst_size = (int) d_size ;
+                    int u = LZ4_decompress_safe (src, dst, src_size, dst_size) ;
+                    if (u != dst_size)
+                    {
+                        // blob is invalid
+                        ok = false ;
+                    }
                 }
             }
         }
@@ -175,7 +189,10 @@ GrB_Info GB_deserialize_from_blob
 
     (*X_handle) = X ;
     (*X_size_handle) = X_size ;
-    s += Sblocks [nblocks-1] ;
+    if (nblocks > 0)
+    {
+        s += Sblocks [nblocks-1] ;
+    }
     (*s_handle) = s ;
     return (GrB_SUCCESS) ;
 }

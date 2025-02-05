@@ -2,7 +2,7 @@
 // GB_bitmap_assign_methods.h: definitions for GB_bitmap_assign* methods
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -20,14 +20,10 @@
 // burble
 //------------------------------------------------------------------------------
 
-#if GB_BURBLE
     #define GBURBLE_BITMAP_ASSIGN(method,M,Mask_comp,accum,Ikind,Jkind,akind) \
         GBURBLE ("Method:" method " ") ;                                    \
         GB_burble_assign (C_replace, Ikind, Jkind, M, Mask_comp,            \
             Mask_struct, accum, A, akind) ;
-#else
-    #define GBURBLE_BITMAP_ASSIGN(method,M,Mask_comp,accum,Ikind,Jkind,akind) ;
-#endif
 
 //------------------------------------------------------------------------------
 // GB_GET_C_BITMAP: get the C matrix (must be bitmap)
@@ -84,7 +80,7 @@
     GB_SLICE_MATRIX (M, 8, chunk) ;
 
 //------------------------------------------------------------------------------
-// GB_GET_A: get the A matrix or the scalar
+// GB_GET_A_AND_SCALAR: get the A matrix or the scalar
 //------------------------------------------------------------------------------
 
 // ALIAS of C and A for bitmap methods: OK only for C(:,:)=A assignment.
@@ -399,7 +395,6 @@ GrB_Info GB_bitmap_assign_noM_accum_whole
     GB_Context Context
 ) ;
 
-GB_PUBLIC
 GrB_Info GB_bitmap_assign_noM_noaccum
 (
     // input/output:

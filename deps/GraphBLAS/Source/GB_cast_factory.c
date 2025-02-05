@@ -2,7 +2,7 @@
 // GB_cast_factory: return a pointer to a typecasting function
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -17,7 +17,6 @@
 
 #include "GB.h"
 
-GB_PUBLIC
 GB_cast_function GB_cast_factory   // returns pointer to function to cast x to z
 (
     const GB_Type_code code1,      // the type of z, the output value

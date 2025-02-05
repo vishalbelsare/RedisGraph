@@ -1,13 +1,12 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
 #include "../ast/ast.h"
-#include "graphcontext.h"
 #include "entities/node.h"
 #include "entities/edge.h"
 #include "entities/qg_node.h"
@@ -36,11 +35,6 @@ void QueryGraph_AddNode(QueryGraph *g, QGNode *n);
 
 /* Adds a new edge to the graph */
 void QueryGraph_ConnectNodes(QueryGraph *qg, QGNode *src, QGNode *dest, QGEdge *e);
-
-/* Add all nodes and relationships from a single path
- * (from part of a MATCH or CREATE pattern, or a MERGE clause)
- * to the QueryGraph. */
-void QueryGraph_AddPath(QueryGraph *qg, const cypher_astnode_t *path);
 
 /* Extract a sub-graph of 'qg' according to the path(s) definitions within
  * 'paths' variable, elements missing from 'qg' will be created */

@@ -2,14 +2,14 @@
 // GB_Scalar_reduce: reduce a matrix to a GrB_Scalar
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
 #include "GB_reduce.h"
 
-#define GB_FREE_ALL GB_phbix_free ((GrB_Matrix) S) ;
+#define GB_FREE_ALL GB_phybix_free ((GrB_Matrix) S) ;
 
 GrB_Info GB_Scalar_reduce
 (

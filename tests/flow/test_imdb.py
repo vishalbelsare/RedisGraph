@@ -1,19 +1,16 @@
-import os
-import sys
-from RLTest import Env
-from redisgraph import Graph
-from base import FlowTestsBase
+from common import *
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from index_utils import *
 from reversepattern import ReversePattern
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../../demo/imdb/')
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../../demo/imdb')
 import imdb_queries
 import imdb_utils
 
 imdb = None
 queries = None
 redis_graph = None
+
 
 class testImdbFlow(FlowTestsBase):
     def __init__(self):
@@ -23,9 +20,9 @@ class testImdbFlow(FlowTestsBase):
         global imdb
         global queries
         global redis_graph
-        redis_con = self.env.getConnection()
-        redis_graph = Graph(imdb_utils.graph_name, redis_con)
-        actors, movies = imdb_utils.populate_graph(redis_con, redis_graph)
+        self.redis_con = self.env.getConnection()
+        redis_graph = Graph(self.redis_con, imdb_utils.graph_name)
+        actors, movies = imdb_utils.populate_graph(self.redis_con, redis_graph)
         imdb = imdb_queries.IMDBQueries(actors, movies)
         queries = imdb.queries()
 
@@ -60,12 +57,15 @@ class testImdbFlow(FlowTestsBase):
                 self.assert_reversed_pattern(query, actual_result)
     
     def test_index_scan_actors_over_85(self):
-        global redis_graph
+        # skip test if we're running under Valgrind
+        # drop index is an async operation which can cause Valgraind
+        # to wrongfully report as a leak
+        if VALGRIND:
+            self.env.skip()
 
         # Execute this command directly, as its response does not contain the result set that
         # 'redis_graph.query()' expects
-        redis_con = self.env.getConnection()
-        res = redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "CREATE INDEX ON :actor(age)")
+        create_node_exact_match_index(redis_graph, 'actor', 'age', sync=True)
 
         q = imdb.actors_over_85_index_scan.query
         execution_plan = redis_graph.execution_plan(q)
@@ -73,7 +73,7 @@ class testImdbFlow(FlowTestsBase):
 
         actual_result = redis_graph.query(q)
 
-        redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "DROP INDEX ON :actor(age)")
+        self.redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "DROP INDEX ON :actor(age)")
 
         # assert result set
         self._assert_only_expected_results_are_in_actual_results(
@@ -87,18 +87,23 @@ class testImdbFlow(FlowTestsBase):
         self.assert_reversed_pattern(q, actual_result)
 
     def test_index_scan_eighties_movies(self):
-        global redis_graph
+        # skip test if we're running under Valgrind
+        # drop index is an async operation which can cause Valgraind
+        # to wrongfully report as a leak
+        if VALGRIND:
+            self.env.skip()
 
         # Execute this command directly, as its response does not contain the result set that
         # 'redis_graph.query()' expects
-        redis_graph.redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "CREATE INDEX ON :movie(year)")
+        create_node_exact_match_index(redis_graph, 'movie', 'year', sync=True)
+
         q = imdb.eighties_movies_index_scan.query
         execution_plan = redis_graph.execution_plan(q)
         self.env.assertIn('Index Scan', execution_plan)
 
         actual_result = redis_graph.query(q)
 
-        redis_graph.redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "DROP INDEX ON :movie(year)")
+        self.redis_con.execute_command("GRAPH.QUERY", redis_graph.name, "DROP INDEX ON :movie(year)")
 
         # assert result set
         self._assert_only_expected_results_are_in_actual_results(
@@ -110,3 +115,4 @@ class testImdbFlow(FlowTestsBase):
 
         # assert reversed pattern.
         self.assert_reversed_pattern(q, actual_result)
+

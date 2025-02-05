@@ -1,7 +1,7 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "../../util/arr.h"
@@ -11,6 +11,7 @@
 #include "../ops/op_node_by_label_scan.h"
 #include "../../util/range/numeric_range.h"
 #include "../../arithmetic/arithmetic_op.h"
+#include "../execution_plan_build/execution_plan_util.h"
 #include "../execution_plan_build/execution_plan_modify.h"
 
 /* The seek by ID optimization searches for a SCAN operation on which
@@ -107,7 +108,7 @@ void seekByID(ExecutionPlan *plan) {
 	ASSERT(plan != NULL);
 
 	const OPType types[] = {OPType_ALL_NODE_SCAN, OPType_NODE_BY_LABEL_SCAN};
-	OpBase **scan_ops = ExecutionPlan_CollectOpsMatchingType(plan->root, types, 2);
+	OpBase **scan_ops = ExecutionPlan_CollectOpsMatchingTypes(plan->root, types, 2);
 
 	for(int i = 0; i < array_len(scan_ops); i++) {
 		_UseIdOptimization(plan, scan_ops[i]);

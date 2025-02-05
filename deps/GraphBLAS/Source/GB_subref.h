@@ -2,7 +2,7 @@
 // GB_subref.h: definitions for GB_subref_* functions
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -11,7 +11,6 @@
 #define GB_SUBREF_H
 #include "GB_ij.h"
 
-GB_PUBLIC
 GrB_Info GB_subref              // C = A(I,J): either symbolic or numeric
 (
     // output

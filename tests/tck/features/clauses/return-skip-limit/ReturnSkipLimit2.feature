@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +61,7 @@ Feature: ReturnSkipLimit2 - Limit
       ORDER BY n.name ASC
       LIMIT 2
       """
-    Then the result should be, in any order:
+    Then the result should be, in order:
       | n             |
       | ({name: 'A'}) |
       | ({name: 'B'}) |
@@ -178,8 +178,6 @@ Feature: ReturnSkipLimit2 - Limit
       | 2     | 1        |
     And no side effects
 
-  @NegativeTest
-  @skip
   Scenario: [9] Fail when using non-constants in LIMIT
     Given any graph
     When executing query:
@@ -188,7 +186,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at compile time: NonConstantExpression
 
-  @NegativeTest
   @skip
   Scenario: [10] Negative parameter for LIMIT should fail
     Given any graph
@@ -207,7 +204,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at runtime: NegativeIntegerArgument
 
-  @NegativeTest
   @skip
   Scenario: [11] Negative parameter for LIMIT with ORDER BY should fail
     Given any graph
@@ -226,8 +222,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at runtime: NegativeIntegerArgument
 
-  @NegativeTest
-  @skip
   Scenario: [12] Fail when using negative value in LIMIT 1
     Given any graph
     When executing query:
@@ -238,8 +232,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at compile time: NegativeIntegerArgument
 
-  @NegativeTest
-  @skip
   Scenario: [13] Fail when using negative value in LIMIT 2
     Given any graph
     And having executed:
@@ -255,7 +247,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at compile time: NegativeIntegerArgument
 
-  @NegativeTest
   @skip
   Scenario: [14] Floating point parameter for LIMIT should fail
     Given any graph
@@ -274,7 +265,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at runtime: InvalidArgumentType
 
-  @NegativeTest
   @skip
   Scenario: [15] Floating point parameter for LIMIT with ORDER BY should fail
     Given any graph
@@ -293,7 +283,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at runtime: InvalidArgumentType
 
-  @NegativeTest
   @skip
   Scenario: [16] Fail when using floating point in LIMIT 1
     Given any graph
@@ -305,7 +294,6 @@ Feature: ReturnSkipLimit2 - Limit
       """
     Then a SyntaxError should be raised at compile time: InvalidArgumentType
 
-  @NegativeTest
   @skip
   Scenario: [17] Fail when using floating point in LIMIT 2
     Given any graph

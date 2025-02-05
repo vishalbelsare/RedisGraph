@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,6 @@ Feature: Match1 - Match nodes
       | ({name: 'c'})    |
     And no side effects
 
-  @skip
   Scenario: [3] Matching nodes using multiple labels
     Given an empty graph
     And having executed:
@@ -121,7 +120,6 @@ Feature: Match1 - Match nodes
       | 3 | 2 |
     And no side effects
 
-  @NegativeTest
   Scenario: [6] Fail when using parameter as node predicate in MATCH
     Given any graph
     When executing query:
@@ -131,7 +129,6 @@ Feature: Match1 - Match nodes
       """
     Then a SyntaxError should be raised at compile time: InvalidParameterUse
 
-  @NegativeTest
   Scenario Outline: [7] Fail when a relationship has the same variable in a preceding MATCH
     Given any graph
     When executing query:
@@ -157,7 +154,6 @@ Feature: Match1 - Match nodes
       | (x), (a)-[q]-(b), (s), (s)-[r]->(t)<-[]-(b) |
 
   @skip
-  @NegativeTest
   Scenario Outline: [8] Fail when a path has the same variable in a preceding MATCH
     Given any graph
     When executing query:
@@ -187,7 +183,6 @@ Feature: Match1 - Match nodes
       | (x), (a)-[q]-(b), r = (s)-[p]-(t)-[]-(b)   |
       | (x), (a)-[q]-(b), r = (s)-[p]->(t)<-[]-(b) |
 
-  @NegativeTest
   Scenario Outline: [9] Fail when a relationship has the same variable in the same pattern
     Given any graph
     When executing query:
@@ -226,7 +221,6 @@ Feature: Match1 - Match nodes
       | (x), (a)-[r]-(b), (s), (s)-[]->(r)<-[]-(b)      |
 
   @skip
-  @NegativeTest
   Scenario Outline: [10] Fail when a path has the same variable in the same pattern
     Given any graph
     When executing query:
@@ -260,7 +254,6 @@ Feature: Match1 - Match nodes
       | (x), r = (s)-[p]->(t)<-[]-(b), (r)-[q]-(b)      |
 
   @skip
-  @NegativeTest
   Scenario Outline: [11] Fail when matching a node variable bound to a value
     Given any graph
     When executing query:

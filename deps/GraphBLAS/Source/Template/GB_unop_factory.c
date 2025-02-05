@@ -2,7 +2,7 @@
 // GB_unop_factory.c:  switch factory for unary operators and 2 types
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -596,6 +596,16 @@
                 {
                     case GB_FP32_code   : GB_WORKER (_erfc, _fp32, float     , _fp32, float )
                     case GB_FP64_code   : GB_WORKER (_erfc, _fp64, double    , _fp64, double)
+                    default: ;
+                }
+                break ;
+
+            case GB_CBRT_unop_code :    // z = cbrt (x)
+
+                switch (code1)
+                {
+                    case GB_FP32_code   : GB_WORKER (_cbrt, _fp32, float     , _fp32, float )
+                    case GB_FP64_code   : GB_WORKER (_cbrt, _fp64, double    , _fp64, double)
                     default: ;
                 }
                 break ;

@@ -2,7 +2,7 @@
 // GB_build.h: definitions for GB_build
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -53,6 +53,7 @@ GrB_Info GB_builder                 // build a matrix from tuples
                                     // if NULL use the SECOND operator to
                                     // keep the most recent duplicate.
     const GrB_Type stype,           // the type of S_work or S_input
+    bool do_burble,                 // if true, then burble is allowed
     GB_Context Context
 ) ;
 

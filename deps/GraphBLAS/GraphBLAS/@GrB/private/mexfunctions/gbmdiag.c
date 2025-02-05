@@ -2,8 +2,8 @@
 // gbmdiag: construct a diaogonal matrix from a vector
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
@@ -84,14 +84,7 @@ void mexFunction
     // compute C = diag (v, k)
     //--------------------------------------------------------------------------
 
-    if (desc == NULL)
-    { 
-        OK1 (C, GrB_Matrix_diag (C, (GrB_Vector) V, k)) ;
-    }
-    else
-    {
-        OK1 (C, GxB_Matrix_diag (C, (GrB_Vector) V, k, desc)) ;
-    }
+    OK1 (C, GxB_Matrix_diag (C, (GrB_Vector) V, k, desc)) ;
 
     //--------------------------------------------------------------------------
     // free shallow copies

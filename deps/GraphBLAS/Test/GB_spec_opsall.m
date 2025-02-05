@@ -3,7 +3,7 @@ function [binops unary_ops add_ops types semirings selops idxunop] = GB_spec_ops
 %
 % [binops unary_ops add_ops types semirings select_ops idxunop] = GB_spec_opsall
 
-% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 % SPDX-License-Identifier: Apache-2.0
 
 %-------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ unary_ops.float = {
 
 % unary ops for FP32 and FP64 only
 unary_ops.fpreal = {
-'lgamma', 'tgamma', 'erf', 'erfc', 'frexpx',  'frexpe' } ;
+'lgamma', 'tgamma', 'erf', 'erfc', 'frexpx',  'frexpe', 'cbrt' } ;
 
 % unary ops for FC32 and FC64 only
 unary_ops.complex = {

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 
 Feature: TypeConversion3 - To Float
 
-  @skip
   Scenario: [1] `toFloat()` on mixed number types
     Given any graph
     When executing query:
@@ -43,7 +42,6 @@ Feature: TypeConversion3 - To Float
       | [3.4, 3.0]    |
     And no side effects
 
-  @skip
   Scenario: [2] `toFloat()` returning null on non-numerical string
     Given any graph
     When executing query:
@@ -56,7 +54,6 @@ Feature: TypeConversion3 - To Float
       | null | null  |
     And no side effects
 
-  @skip
   Scenario: [3] `toFloat()` handling Any type
     Given any graph
     When executing query:
@@ -69,7 +66,6 @@ Feature: TypeConversion3 - To Float
       | [3.4, 3.0, 5.0] |
     And no side effects
 
-  @skip
   Scenario: [4] `toFloat()` on a list of strings
     Given any graph
     When executing query:
@@ -82,7 +78,6 @@ Feature: TypeConversion3 - To Float
       | [1.0, 2.0, null] |
     And no side effects
 
-  @skip
   Scenario: [5] `toFloat()` on node property
     Given an empty graph
     And having executed:
@@ -101,9 +96,7 @@ Feature: TypeConversion3 - To Float
       | 4.0   |
     And no side effects
 
-  @skip
-  @NegativeTest
-  Scenario Outline: [6] `toFloat()` failing on invalid arguments
+  Scenario Outline: [6] Fail `toFloat()` on invalid types #Example: <exampleName>
     Given an empty graph
     And having executed:
       """
@@ -117,10 +110,10 @@ Feature: TypeConversion3 - To Float
     Then a TypeError should be raised at runtime: InvalidArgumentValue
 
     Examples:
-      | invalid |
-      | true    |
-      | []      |
-      | {}      |
-      | n       |
-      | r       |
-      | p       |
+      | invalid | exampleName  |
+      | true    | boolean      |
+      | []      | list         |
+      | {}      | map          |
+      | n       | node         |
+      | r       | relationship |
+      | p       | path         |

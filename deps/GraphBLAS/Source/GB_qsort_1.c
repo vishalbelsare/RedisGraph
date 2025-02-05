@@ -2,7 +2,7 @@
 // GB_qsort_1: sort an 1-by-n list of integers
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -39,7 +39,6 @@
 
 #include "GB_qsort_template.c"
 
-GB_PUBLIC
 void GB_qsort_1    // sort array A of size 1-by-n
 (
     int64_t *restrict A_0,      // size n array

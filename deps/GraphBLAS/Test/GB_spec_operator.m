@@ -9,7 +9,7 @@ function [opname optype ztype xtype ytype] = GB_spec_operator (op,optype_default
 % ztype, xtype, and ytype are the types of z, x, and y for z = f(x,y), if
 % f is a binary operator, or z = f(x) if f is a unary operator.
 
-% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 % SPDX-License-Identifier: Apache-2.0
 
 if (isempty (op))
@@ -266,7 +266,7 @@ switch opname
     % unary ops for real floating-point only
     %--------------------------------------------------------------------------
 
-    case { 'lgamma', 'tgamma', 'erf', 'erfc', 'frexpx',  'frexpe' }
+    case { 'lgamma', 'tgamma', 'erf', 'erfc', 'frexpx',  'frexpe', 'cbrt' }
         % x and z have the same type
         if (~is_real_float)
             error ('invalid op') ;

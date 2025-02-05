@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,7 +52,6 @@ Feature: WithWhere5 - Filter on predicate resulting in null
       | (:TextNode {var: 'text'}) |
     And no side effects
 
-  @skip
   Scenario: [2] Filter out on null if the AND'd predicate evaluates to false
     Given an empty graph
     And having executed:
@@ -89,7 +88,7 @@ Feature: WithWhere5 - Filter on predicate resulting in null
       """
       MATCH (:Root {name: 'x'})-->(i:TextNode)
       WITH i
-      WHERE i.var > 'te' AND exists(i.var)
+      WHERE i.var > 'te' AND i.var IS NOT NULL
       RETURN i
       """
     Then the result should be, in any order:
@@ -111,7 +110,7 @@ Feature: WithWhere5 - Filter on predicate resulting in null
       """
       MATCH (:Root {name: 'x'})-->(i)
       WITH i
-      WHERE i.var > 'te' OR exists(i.var)
+      WHERE i.var > 'te' OR i.var IS NOT NULL
       RETURN i
       """
     Then the result should be, in any order:

@@ -2,7 +2,7 @@
 // GB_selector:  select entries from a matrix
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -35,13 +35,13 @@
 
 #define GB_FREE_ALL                         \
 {                                           \
-    GB_phbix_free (C) ;                     \
+    GB_phybix_free (C) ;                    \
     GB_FREE_WORKSPACE ;                     \
 }
 
 GrB_Info GB_selector
 (
-    GrB_Matrix C,               // output matrix, NULL or static header
+    GrB_Matrix C,               // output matrix, NULL or existing header
     GB_Opcode opcode,           // selector opcode
     const GB_Operator op,       // user operator, NULL for resize/nonzombie
     const bool flipij,          // if true, flip i and j for user operator
@@ -64,7 +64,7 @@ GrB_Info GB_selector
     // positional selector (tril, triu, diag, offdiag, resize, rowindex, ...):
     // can't be jumbled.  nonzombie, entry-valued op, user op: jumbled OK
     ASSERT (GB_IMPLIES (GB_OPCODE_IS_POSITIONAL (opcode), !GB_JUMBLED (A))) ;
-    ASSERT (C == NULL || (C != NULL && C->static_header)) ;
+    ASSERT (C == NULL || (C != NULL && (C->static_header || GBNSTATIC))) ;
 
     //--------------------------------------------------------------------------
     // declare workspace
@@ -178,7 +178,7 @@ GrB_Info GB_selector
         // GB_bitmap_selector.
 
         ASSERT (!in_place_A) ;
-        ASSERT (C != NULL && C->static_header) ;
+        ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
 
         // construct a scalar containing the iso scalar of A
 
@@ -208,13 +208,13 @@ GrB_Info GB_selector
             (GrB_Matrix) S, ithunk, athunk, ythunk, Context)) ;
         ASSERT_MATRIX_OK (C, "C from iso scalar test", GB0) ;
         bool C_empty = (GB_nnz (C) == 0) ;
-        GB_phbix_free (C) ;
+        GB_phybix_free (C) ;
 
         // check if C has 0 or 1 entry
         if (C_empty)
         { 
             // C is an empty matrix
-            return (GB_new (&C, true, // static header
+            return (GB_new (&C, // existing header
                 A->type, avlen, avdim, GB_Ap_calloc, true,
                 GxB_SPARSE + GxB_HYPERSPARSE, GB_Global_hyper_switch_get ( ),
                 1, Context)) ;
@@ -300,7 +300,7 @@ GrB_Info GB_selector
     if (use_bitmap_selector)
     { 
         GB_BURBLE_MATRIX (A, "(bitmap select) ") ;
-        ASSERT (C != NULL && C->static_header) ;
+        ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
         return (GB_bitmap_selector (C, C_iso, opcode, op,                  
             flipij, A, ithunk, athunk, ythunk, Context)) ;
     }
@@ -348,7 +348,7 @@ GrB_Info GB_selector
         ASSERT_MATRIX_OK (A, "A for col selector", GB_FLIP (GB0)) ;
         int nth = nthreads_max ;
         ASSERT (!in_place_A) ;
-        ASSERT (C != NULL && C->static_header) ;
+        ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
         ASSERT (GB_JUMBLED_OK (A)) ;
 
         int64_t j = (opcode == GB_COLINDEX_idxunop_code) ? (-ithunk) : ithunk ;
@@ -419,7 +419,7 @@ GrB_Info GB_selector
         else if (cnz == 0)
         { 
             // return C as empty
-            return (GB_new (&C, true, // auto (sparse or hyper), static header
+            return (GB_new (&C, // auto (sparse or hyper), existing header
                 A->type, avlen, avdim, GB_Ap_calloc, true,
                 GxB_HYPERSPARSE, GB_Global_hyper_switch_get ( ), 1, Context)) ;
         }
@@ -429,7 +429,7 @@ GrB_Info GB_selector
         //----------------------------------------------------------------------
 
         int sparsity = (A_is_hyper) ? GxB_HYPERSPARSE : GxB_SPARSE ;
-        GB_OK (GB_new_bix (&C, true, // sparse or hyper (from A), static header
+        GB_OK (GB_new_bix (&C, // sparse or hyper (from A), existing header
             A->type, avlen, avdim, GB_Ap_malloc, true, sparsity, false,
             A->hyper_switch, cnvec, cnz, true, A_iso, Context)) ;
 
@@ -584,6 +584,7 @@ GrB_Info GB_selector
         C->magic = GB_MAGIC ;
         C->jumbled = A_jumbled ;    // C is jumbled if A is jumbled
         C->iso = C_iso ;            // OK: burble already done above
+        C->nvals = Cp [cnvec] ;
         C->nvec_nonempty = GB_nvec_nonempty (C, Context) ;
         ASSERT_MATRIX_OK (C, "C output for GB_selector (column select)", GB0) ;
         return (GrB_SUCCESS) ;
@@ -596,7 +597,7 @@ GrB_Info GB_selector
     #undef  GB_FREE_ALL
     #define GB_FREE_ALL                         \
     {                                           \
-        GB_phbix_free (C) ;                     \
+        GB_phybix_free (C) ;                    \
         GB_FREE_WORKSPACE ;                     \
     }
 
@@ -605,8 +606,9 @@ GrB_Info GB_selector
     //--------------------------------------------------------------------------
 
     int64_t cnz = 0 ;
+    int64_t cplen = GB_IMAX (1, anvec) ;
 
-    Cp = GB_CALLOC (anvec+1, int64_t, &Cp_size) ;
+    Cp = GB_CALLOC (cplen+1, int64_t, &Cp_size) ;
     if (Cp == NULL)
     { 
         // out of memory
@@ -649,7 +651,7 @@ GrB_Info GB_selector
     if (op_is_positional)
     {
         // allocate Zp
-        Zp = GB_MALLOC_WORK (anvec, int64_t, &Zp_size) ;
+        Zp = GB_MALLOC_WORK (cplen, int64_t, &Zp_size) ;
         if (Zp == NULL)
         { 
             // out of memory
@@ -695,7 +697,8 @@ GrB_Info GB_selector
     cnz = Cp [anvec] ;
     cnz = GB_IMAX (cnz, 1) ;
     Ci = GB_MALLOC (cnz, int64_t, &Ci_size) ;
-    Cx = (GB_void *) GB_XALLOC (C_iso, cnz, asize, &Cx_size) ;
+    // use calloc since C is sparse, not bitmap
+    Cx = (GB_void *) GB_XALLOC (false, C_iso, cnz, asize, &Cx_size) ; // x:OK
     if (Ci == NULL || Cx == NULL)
     { 
         // out of memory
@@ -761,13 +764,15 @@ GrB_Info GB_selector
             A->nvec = cnvec ;
             ASSERT (A->nvec == C_nvec_nonempty) ;
             GB_FREE (&Cp, Cp_size) ;
+            // the A->Y hyper_hash is now invalid
+            GB_hyper_hash_free (A) ;
         }
         else
         { 
             // free the old A->p and transplant in Cp as the new A->p
             GB_FREE (&Ap, Ap_size) ;
             A->p = Cp ; Cp = NULL ; A->p_size = Cp_size ;
-            A->plen = anvec ;
+            A->plen = cplen ;
         }
 
         ASSERT (Cp == NULL) ;
@@ -779,6 +784,7 @@ GrB_Info GB_selector
         A->nvec_nonempty = C_nvec_nonempty ;
         A->jumbled = A_jumbled ;        // A remains jumbled (in-place select)
         A->iso = C_iso ;                // OK: burble already done above
+        A->nvals = A->p [A->nvec] ;
 
         // the NONZOMBIE opcode may have removed all zombies, but A->nzombie
         // is still nonzero.  It is set to zero in GB_wait.
@@ -793,8 +799,8 @@ GrB_Info GB_selector
         //----------------------------------------------------------------------
 
         int sparsity = (A_is_hyper) ? GxB_HYPERSPARSE : GxB_SPARSE ;
-        ASSERT (C != NULL && C->static_header) ;
-        info = GB_new (&C, true, // sparse or hyper (from A), static header
+        ASSERT (C != NULL && (C->static_header || GBNSTATIC)) ;
+        info = GB_new (&C, // sparse or hyper (from A), existing header
             A->type, avlen, avdim, GB_Ap_null, true,
             sparsity, A->hyper_switch, anvec, Context) ;
         ASSERT (info == GrB_SUCCESS) ;
@@ -830,15 +836,17 @@ GrB_Info GB_selector
             ASSERT (C->nvec == C_nvec_nonempty) ;
         }
 
+        // note that C->Y is not yet constructed
         C->p = Cp ; Cp = NULL ; C->p_size = Cp_size ;
         C->h = Ch ; Ch = NULL ; C->h_size = Ch_size ;
         C->i = Ci ; Ci = NULL ; C->i_size = Ci_size ;
         C->x = Cx ; Cx = NULL ; C->x_size = Cx_size ;
-        C->plen = anvec ;
+        C->plen = cplen ;
         C->magic = GB_MAGIC ;
         C->nvec_nonempty = C_nvec_nonempty ;
         C->jumbled = A_jumbled ;    // C is jumbled if A is jumbled
         C->iso = C_iso ;            // OK: burble already done above
+        C->nvals = C->p [C->nvec] ;
 
         ASSERT_MATRIX_OK (C, "C output for GB_selector", GB0) ;
     }

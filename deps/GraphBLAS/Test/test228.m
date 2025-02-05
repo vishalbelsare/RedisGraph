@@ -1,7 +1,7 @@
 function test228
 %TEST228 test serialize/deserialize for all sparsity formats
 
-% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+% SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 % SPDX-License-Identifier: Apache-2.0
 
 fprintf ('test228 C = serialize (A) for all sparsity formats and all types\n') ;
@@ -21,7 +21,7 @@ for k1 = 1:length (types)
                 A.sparsity = A_sparsity ;
                 C = GB_mex_serialize (A, -2) ;      % GrB_serialize
                 GB_spec_compare (A, C) ;
-                for method = [-1 0 1000 2000:2009]
+                for method = [-1 0 1000 2000:2009 3000:3019]
                     C = GB_mex_serialize (A, method) ;
                     GB_spec_compare (A, C) ;
                 end

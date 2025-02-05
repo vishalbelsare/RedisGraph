@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
@@ -41,8 +41,11 @@ typedef enum {
 	OPType_UPDATE,
 	OPType_DELETE,
 	OPType_UNWIND,
+	OPType_FOREACH,
 	OPType_PROC_CALL,
+	OPType_CALLSUBQUERY,
 	OPType_ARGUMENT,
+	OPType_ARGUMENT_LIST,
 	OPType_CARTESIAN_PRODUCT,
 	OPType_VALUE_HASH_JOIN,
 	OPType_APPLY,
@@ -92,13 +95,15 @@ static const OPType FILTER_RECURSE_BLACKLIST[] = {
 	OPType_MERGE
 };
 
-#define EAGER_OP_COUNT 5
+#define EAGER_OP_COUNT 7
 static const OPType EAGER_OPERATIONS[] = {
 	OPType_AGGREGATE,
 	OPType_CREATE,
-	OPType_UPDATE,
 	OPType_DELETE,
-	OPType_MERGE
+	OPType_UPDATE,
+	OPType_MERGE,
+	OPType_FOREACH,
+	OPType_SORT
 };
 
 struct OpBase;
@@ -138,51 +143,152 @@ struct OpBase {
 };
 typedef struct OpBase OpBase;
 
-// Initialize op.
-void OpBase_Init(OpBase *op, OPType type, const char *name, fpInit init, fpConsume consume,
-				 fpReset reset, fpToString toString, fpClone, fpFree free, bool writer,
-				 const struct ExecutionPlan *plan);
-void OpBase_Free(OpBase *op);       // Free op.
-Record OpBase_Consume(OpBase *op);  // Consume op.
-Record OpBase_Profile(OpBase *op);  // Profile op.
+// initialize op
+void OpBase_Init
+(
+	OpBase *op,
+	OPType type,
+	const char *name,
+	fpInit init,
+	fpConsume consume,
+	fpReset reset,
+	fpToString toString,
+	fpClone,
+	fpFree free,
+	bool writer,
+	const struct ExecutionPlan *plan
+);
 
-void OpBase_ToString(const OpBase *op, sds *buff);
+// free op
+void OpBase_Free
+(
+	OpBase *op
+);
 
-OpBase *OpBase_Clone(const struct ExecutionPlan *plan, const OpBase *op);
+// consume op
+Record OpBase_Consume
+(
+	OpBase *op
+);
+
+// profile op
+Record OpBase_Profile
+(
+	OpBase *op
+);
+
+void OpBase_ToString
+(
+	const OpBase *op,
+	sds *buff
+);
+
+OpBase *OpBase_Clone
+(
+	const struct ExecutionPlan *plan,
+	const OpBase *op
+);
 
 // returns operation type
-OPType OpBase_Type(const OpBase *op);
+OPType OpBase_Type
+(
+	const OpBase *op
+);
 
-/* Mark alias as being modified by operation.
- * Returns the ID associated with alias. */
-int OpBase_Modifies(OpBase *op, const char *alias);
+// returns the number of children of the op
+uint OpBase_ChildCount
+(
+	const OpBase *op
+);
 
-/* Adds an alias to an existing modifier, such that record[modifier] = record[alias]. */
-int OpBase_AliasModifier(OpBase *op, const char *modifier, const char *alias);
+// returns the i'th child of the op
+OpBase *OpBase_GetChild
+(
+	OpBase *join,  // op
+	uint i         // child index
+);
 
-/* Returns true if any of an op's children are aware of the given alias. */
-bool OpBase_ChildrenAware(OpBase *op, const char *alias, int *idx);
+// mark alias as being modified by operation
+// returns the ID associated with alias
+int OpBase_Modifies
+(
+	OpBase *op,
+	const char *alias
+);
 
-/* Returns true if op is aware of alias.
- * an operation is aware of all aliases it modifies and all aliases
- * modified by prior operation within its segment. */
-bool OpBase_Aware(OpBase *op, const char *alias, int *idx);
+// adds an alias to an existing modifier
+// such that record[modifier] = record[alias]
+int OpBase_AliasModifier
+(
+	OpBase *op,            // op
+	const char *modifier,  // existing alias
+	const char *alias      // new alias
+);
 
-void OpBase_PropagateFree(OpBase *op); // Sends free request to each operation up the chain.
-void OpBase_PropagateReset(OpBase *op); // Sends reset request to each operation up the chain.
+// returns true if any of an op's children are aware of the given alias
+bool OpBase_ChildrenAware
+(
+	OpBase *op,
+	const char *alias,
+	int *idx
+);
 
-// Indicates if the operation is a writer operation.
-bool OpBase_IsWriter(OpBase *op);
+// returns true if op is aware of alias
+// an operation is aware of all aliases it modifies and all aliases
+// modified by prior operation within its segment
+bool OpBase_Aware
+(
+	OpBase *op,
+	const char *alias,
+	int *idx
+);
 
-// Update operation consume function.
-void OpBase_UpdateConsume(OpBase *op, fpConsume consume);
+// sends reset request to each operation up the chain
+void OpBase_PropagateReset
+(
+	OpBase *op
+);
 
-// Creates a new record that will be populated during execution.
-Record OpBase_CreateRecord(const OpBase *op);
+// indicates if the operation is a writer operation
+bool OpBase_IsWriter
+(
+	OpBase *op
+);
 
-// Clones given record.
-Record OpBase_CloneRecord(Record r);
+// update operation consume function
+void OpBase_UpdateConsume
+(
+	OpBase *op,
+	fpConsume consume
+);
 
-// Release record.
-void OpBase_DeleteRecord(Record r);
+// updates the plan of an operation
+void OpBase_BindOpToPlan
+(
+	OpBase *op,
+	const struct ExecutionPlan *plan
+);
 
+// creates a new record that will be populated during execution
+Record OpBase_CreateRecord
+(
+	const OpBase *op
+);
+
+// clones given record
+Record OpBase_CloneRecord
+(
+	Record r
+);
+
+// deep clones given record
+Record OpBase_DeepCloneRecord
+(
+	Record r
+);
+
+// release record
+void OpBase_DeleteRecord
+(
+	Record r
+);

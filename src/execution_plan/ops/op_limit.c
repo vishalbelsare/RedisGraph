@@ -1,12 +1,12 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "op_limit.h"
 #include "../../RG.h"
-#include "../../errors.h"
+#include "../../errors/errors.h"
 #include "../../arithmetic/arithmetic_expression.h"
 
 /* Forward declarations. */
@@ -27,7 +27,7 @@ static void _eval_limit(OpLimit *op, AR_ExpNode *limit_exp) {
 
 	// Validate that the limit value is numeric and non-negative.
 	if(SI_TYPE(l) != T_INT64 || SI_GET_NUMERIC(l) < 0) {
-		ErrorCtx_SetError("Limit operates only on non-negative integers");
+		ErrorCtx_SetError(EMSG_OPERATE_ON_NON_NEGATIVE_INT, "Limit");
 	}
 
 	op->limit = SI_GET_NUMERIC(l);

@@ -2,7 +2,7 @@
 // GB_serialize_method: parse the compression method
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -13,7 +13,6 @@
 void GB_serialize_method
 (
     // output
-    bool *intel,                    // if true, use Intel IPPS (if available)
     int32_t *algo,                  // algorithm to use
     int32_t *level,                 // compression level
     // input
@@ -24,19 +23,9 @@ void GB_serialize_method
     if (method < 0)
     { 
         // no compression if method is negative
-        (*intel) = false ;
         (*algo) = GxB_COMPRESSION_NONE ;
         (*level) = 0 ;
         return ;
-    }
-
-    // determine if the Intel IPPS versions should be used
-    (*intel) = false ;
-    if (method >= GxB_COMPRESSION_INTEL)
-    {
-        // uncomment this line when the Intel IPPS methods are used
-//      (*intel) = true ;
-        method = method % GxB_COMPRESSION_INTEL ;
     }
 
     // Determine the algorithm and level.  Lower levels give faster compression
@@ -51,23 +40,27 @@ void GB_serialize_method
     {
 
         default : 
-            (*algo) = GxB_COMPRESSION_LZ4 ; 
-            (*intel) = false ;
-            (*level) = 0 ;              // level is ignored
+            // The default method has changed to ZSTD, level 1, as of
+            // SuiteSparse:GraphBLAS v7.2.0.
+            (*algo) = GxB_COMPRESSION_ZSTD ; 
+            (*level) = 1 ;              // fast with good compression
             break ;
 
         case GxB_COMPRESSION_LZ4 : 
             (*level) = 0 ;              // level is ignored
             break ;
 
-        case GxB_COMPRESSION_LZ4HC : 
-            // level 1 to 9, with a default of 9.  Note that LZ4HC supports
-            // levels 10, 11, and 12, but these are very slow and do not
-            // provide much benefit over level 9.  Level 10 often results in
-            // a larger blob than level 9.  Level 12 is typically just a tiny
-            // bit more compact than level 9, but can be 10x slower, or worse,
-            // as compared to level 9.
+        case GxB_COMPRESSION_LZ4HC :    // LZ4HC: level 1 to 9; default 9.
+            // Note that LZ4HC supports levels 10, 11, and 12, but these are
+            // very slow and do not provide much benefit over level 9.  Level
+            // 10 often results in a larger blob than level 9.  Level 12 is
+            // typically just a tiny bit more compact than level 9, but can be
+            // 10x slower, or worse, as compared to level 9.
             if ((*level) <= 0 || (*level) > 9) (*level) = 9 ;
+            break ;
+
+        case GxB_COMPRESSION_ZSTD :     // ZSTD: level 1 to 19; default 1.
+            if ((*level) <= 0 || (*level) > 19) (*level) = 1 ;
             break ;
 
 //      These cases will be uncommented when the methods are implemented:

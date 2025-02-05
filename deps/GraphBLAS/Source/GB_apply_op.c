@@ -2,7 +2,7 @@
 // GB_apply_op: typecast and apply a unary/binary/idxunop operator to an array
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 #include "GB_binop.h"
 #include "GB_ek_slice.h"
 #include "GB_unused.h"
-#ifndef GBCOMPACT
+#ifndef GBCUDA_DEV
 #include "GB_unop__include.h"
 #include "GB_binop__include.h"
 #endif
@@ -340,7 +340,7 @@ GrB_Info GB_apply_op        // apply a unary op, idxunop, or binop, Cx = op (A)
 
         // determine number of threads to use
         int nthreads = GB_nthreads (anz, chunk, nthreads_max) ;
-        #ifndef GBCOMPACT
+        #ifndef GBCUDA_DEV
         if (Atype == op->xtype || opcode == GB_IDENTITY_unop_code)
         { 
 
@@ -450,7 +450,7 @@ GrB_Info GB_apply_op        // apply a unary op, idxunop, or binop, Cx = op (A)
         // determine number of threads to use
         int nthreads = GB_nthreads (anz, chunk, nthreads_max) ;
 
-        #ifndef GBCOMPACT
+        #ifndef GBCUDA_DEV
         if (binop_bind1st)
         {
 

@@ -1,18 +1,17 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include <stdio.h>
 #include <signal.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include "RG.h"
+#include "globals.h"
 #include "util/thpool/pools.h"
 #include "commands/cmd_context.h"
-
-extern CommandCtx **command_ctxs;
 
 static struct sigaction old_act;
 
@@ -26,18 +25,26 @@ static void endCrashReport(void) {
 
 static void logCommands(void) {
 	// #readers + #writers + Redis main thread
-	int nthreads = ThreadPools_ThreadCount() + 1;
+	uint32_t n = ThreadPools_ThreadCount() + 1;
+	CommandCtx* commands[n];
+	Globals_GetCommandCtxs(commands, &n);
 
-	for(int i = 0; i < nthreads; i++) {
-		CommandCtx *cmd = command_ctxs[i];
-		if(cmd != NULL) {
-			RedisModule_Log(NULL, "warning", "%s %s", cmd->command_name,
-					cmd->query);
-		}
+	for(uint32_t i = 0; i < n; i++) {
+		CommandCtx *cmd = commands[i];
+		ASSERT(cmd != NULL);
+
+		RedisModule_Log(NULL, "warning", "%s %s", cmd->command_name,
+				cmd->query);
+
+		CommandCtx_Free(cmd);
 	}
 }
 
-void InfoFunc(RedisModuleInfoCtx *ctx, int for_crash_report) {
+void InfoFunc
+(
+	RedisModuleInfoCtx *ctx,
+	int for_crash_report
+) {
 	// make sure information is requested for crash report
 	if(!for_crash_report) return;
 
@@ -46,23 +53,33 @@ void InfoFunc(RedisModuleInfoCtx *ctx, int for_crash_report) {
 	// other threads can potentially change states before being interrupted.
 	ThreadPools_Pause();
 
-	char *command_desc = NULL;
 	// #readers + #writers + Redis main thread
-	int nthreads = ThreadPools_ThreadCount() + 1;
+	uint32_t n = ThreadPools_ThreadCount() + 1;
+	CommandCtx* commands[n];
+	Globals_GetCommandCtxs(commands, &n);
 
 	RedisModule_InfoAddSection(ctx, "executing commands");
 
-	for(int i = 0; i < nthreads; i++) {
-		CommandCtx *cmd = command_ctxs[i];
-		if(cmd != NULL) {
-			asprintf(&command_desc, "%s %s", cmd->command_name, cmd->query);
-			RedisModule_InfoAddFieldCString(ctx, "command", command_desc);
-			free(command_desc);
-		}
+	for(int i = 0; i < n; i++) {
+		CommandCtx *cmd = commands[i];
+		ASSERT(cmd != NULL);
+
+		int rc __attribute__((unused));
+		char *command_desc = NULL;
+		rc = asprintf(&command_desc, "%s %s", cmd->command_name, cmd->query);
+		RedisModule_InfoAddFieldCString(ctx, "command", command_desc);
+
+		free(command_desc);
+		CommandCtx_Free(cmd);
 	}
 }
 
-void crashHandler(int sig, siginfo_t *info, void *ucontext) {
+void crashHandler
+(
+	int sig,
+	siginfo_t *info,
+	void *ucontext
+) {
 	// pause all working threads
 	// NOTE: pausing is an async operation
 	ThreadPools_Pause();
@@ -78,7 +95,10 @@ void crashHandler(int sig, siginfo_t *info, void *ucontext) {
 	(*old_act.sa_sigaction)(sig, info, ucontext);
 }
 
-void setupCrashHandlers(RedisModuleCtx *ctx) {
+void setupCrashHandlers
+(
+	RedisModuleCtx *ctx
+) {
 	// if RedisModule_RegisterInfoFunc is available use it
 	// to report RedisGraph additional information in case of a crash
 	// otherwise overwrite Redis signal handler
@@ -100,3 +120,6 @@ void setupCrashHandlers(RedisModuleCtx *ctx) {
 	}
 }
 
+#if (defined(DEBUG) || defined(_DEBUG)) && !defined(NDEBUG)
+#include "readies/cetara/diag/gdb.c"
+#endif

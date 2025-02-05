@@ -1,11 +1,12 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "rmalloc.h"
-#include "../errors.h"
+
+#include "../errors/errors.h"
 
 #ifdef REDIS_MODULE_TARGET /* Set this when compiling your code as a module */
 
@@ -17,9 +18,9 @@
 // in which case when the allocation is freed we will deduct
 // actual allocated size from 'n_alloced' which can lead to negative values if
 // bytes requested < bytes allocated
-static __thread int64_t n_alloced; 
+static __thread int64_t n_alloced;
 static int64_t mem_capacity;  // maximum memory consumption for thread
- 
+
 // function pointers which hold the original address of RedisModule_Alloc*
 static void (*RedisModule_Free_Orig)(void *ptr);
 static void * (*RedisModule_Alloc_Orig)(size_t bytes);
@@ -43,10 +44,10 @@ static inline void _nmalloc_increment(int64_t n_bytes) {
 	if(n_alloced > mem_capacity) {
 		// set n_alloced to MIN to avoid further out of memory exceptions
 		// TODO: consider switching to double -inf
-		n_alloced = INT64_MIN;
-		
+		n_alloced = INT32_MIN;
+
 		// throw exception cause memory limit exceeded
-		ErrorCtx_SetError("Query's mem consumption exceeded capacity");
+		ErrorCtx_SetError(EMSG_QUERY_MEM_CONSUMPTION);
 	}
 }
 
@@ -86,12 +87,12 @@ void rm_free_with_capacity(void *ptr) {
 void rm_set_mem_capacity(int64_t cap) {
 	bool is_capped = (mem_capacity > 0); // current allocator applies memory cap
 	bool should_cap = (cap > 0); // should we use a memory capped allocator
-	
+
 	// The local enforced capacity should be set
 	// before resetting function pointers
 	// for instance if we're switching to capped allocator
 	// we want the memory cap to be set
-	mem_capacity = cap; 
+	mem_capacity = cap;
 	if(should_cap && !is_capped) {
 		// store the function pointer original values and change them
 		// to the capped version
@@ -115,15 +116,23 @@ void rm_set_mem_capacity(int64_t cap) {
 	}
 }
 
-#endif
+#else
+
+void rm_reset_n_alloced() {
+}
+
+void rm_set_mem_capacity(int64_t cap) {
+}
+
+#endif // REDIS_MODULE_TARGET
 
 /* Redefine the allocator functions to use the malloc family.
  * Only to be used when running module code from a non-Redis
  * context, such as unit tests. */
 void Alloc_Reset() {
-  RedisModule_Alloc = malloc;
-  RedisModule_Realloc = realloc;
-  RedisModule_Calloc = calloc;
-  RedisModule_Free = free;
-  RedisModule_Strdup = strdup;
+	RedisModule_Alloc   = malloc;
+	RedisModule_Realloc = realloc;
+	RedisModule_Calloc  = calloc;
+	RedisModule_Free    = free;
+	RedisModule_Strdup  = strdup;
 }

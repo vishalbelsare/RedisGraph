@@ -2,7 +2,7 @@
 // GB_qsort_1b: sort a 2-by-n list, using A [0][ ] as the sort key
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -48,7 +48,6 @@
 
 #include "GB_qsort_template.c"
 
-GB_PUBLIC
 void GB_qsort_1b    // sort array A of size 2-by-n, using 1 key (A [0][])
 (
     int64_t *restrict A_0,       // size n array

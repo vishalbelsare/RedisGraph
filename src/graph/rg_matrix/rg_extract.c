@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "RG.h"
 #include "rg_matrix.h"
@@ -55,7 +55,7 @@ GrB_Info RG_Matrix_extractElement_UINT64   // x = A(i,j)
 	GrB_Matrix  dp     =  RG_MATRIX_DELTA_PLUS(A);
 	GrB_Matrix  dm     =  RG_MATRIX_DELTA_MINUS(A);
 
-	// if 'delta-plus' exists return dp[i,j]
+	// if dp[i,j] exists return it
 	info = GrB_Matrix_extractElement(x, dp, i, j);
 	if(info == GrB_SUCCESS) {
 		return info;

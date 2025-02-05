@@ -2,7 +2,7 @@
 // GB_Descriptor_check: check and print a Descriptor
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -92,7 +92,6 @@ static GrB_Info GB_dc
 // GB_Descriptor_check
 //------------------------------------------------------------------------------
 
-GB_PUBLIC
 GrB_Info GB_Descriptor_check    // check a GraphBLAS descriptor
 (
     const GrB_Descriptor D,     // GraphBLAS descriptor to print and check

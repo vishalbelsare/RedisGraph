@@ -1,15 +1,16 @@
 //------------------------------------------------------------------------------
-// GB_AxB_saxpy4: compute C+=A*B
+// GB_AxB_saxpy4: compute C+=A*B: C full, A sparse/hyper, B bitmap/full
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
-// GB_AxB_saxpy4 computes C+=A*B where C and B are as-is-full, A is sparse,
-// no mask is present, C_replace is false, the accum matches the monoid,
-// no typecasting is needed, and no user-defined types or operators are used.
+// GB_AxB_saxpy4 computes C+=A*B where C is as-if-full, A is
+// sparse/hypersparse, and B is bitmap/full (or as-if-full).  No mask is
+// present, C_replace is false, the accum matches the monoid, no typecasting is
+// needed, and no user-defined types or operators are used.
 
 // The ANY monoid is not supported, since its use as accum would be unusual.
 // The monoid must have an atomic implementation, so the TIMES monoid for
@@ -19,7 +20,7 @@
 
 #include "GB_mxm.h"
 #include "GB_control.h"
-#ifndef GBCOMPACT
+#ifndef GBCUDA_DEV
 #include "GB_AxB__include2.h"
 #endif
 
@@ -31,11 +32,11 @@
 #define GB_FREE_ALL             \
 {                               \
     GB_FREE_WORKSPACE ;         \
-    GB_phbix_free (C) ;         \
+    GB_phybix_free (C) ;        \
 }
 
 //------------------------------------------------------------------------------
-// GB_AxB_saxpy4: compute C+=A*B in-place
+// GB_AxB_saxpy4: compute C+=A*B: C full, A sparse/hyper, B bitmap/full
 //------------------------------------------------------------------------------
 
 GrB_Info GB_AxB_saxpy4              // C += A*B
@@ -54,7 +55,7 @@ GrB_Info GB_AxB_saxpy4              // C += A*B
     // saxpy4 is disabled if GraphBLAS is compiled as compact
     //--------------------------------------------------------------------------
 
-    #ifdef GBCOMPACT
+    #ifdef GBCUDA_DEV
     return (GrB_NO_VALUE) ;
     #else
 
@@ -91,8 +92,8 @@ GrB_Info GB_AxB_saxpy4              // C += A*B
     //--------------------------------------------------------------------------
 
     GrB_BinaryOp mult = semiring->multiply ;
-    GrB_Monoid add = semiring->add ;
-    ASSERT (mult->ztype == add->op->ztype) ;
+//  GrB_Monoid add = semiring->add ;
+    ASSERT (mult->ztype == semiring->add->op->ztype) ;
     bool A_is_pattern, B_is_pattern ;
     GB_binop_pattern (&A_is_pattern, &B_is_pattern, flipxy, mult->opcode) ;
 

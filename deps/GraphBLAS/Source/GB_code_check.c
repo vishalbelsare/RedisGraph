@@ -2,7 +2,7 @@
 // GB_code_check: print an entry using a type code
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -47,7 +47,6 @@
     }                                                               \
 }
 
-GB_PUBLIC
 GrB_Info GB_code_check          // print an entry using a type code
 (
     const GB_Type_code code,    // type code of value to print

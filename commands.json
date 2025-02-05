@@ -8,7 +8,14 @@
 			},
 			{
 				"name": "query",
-				"type": "string"
+				"type": "string",
+				"dsl": "cypher"
+			},
+			{
+				"name": "timeout",
+				"type": "integer",
+				"optional": true,
+				"token":"TIMEOUT"
 			}
 		],
 		"since": "1.0.0",
@@ -23,7 +30,14 @@
 			},
 			{
 				"name": "query",
-				"type": "string"
+				"type": "string",
+				"dsl": "cypher"
+			},
+			{
+				"name": "timeout",
+				"type": "integer",
+				"optional": true,
+				"token":"TIMEOUT"
 			}
 		],
 		"since": "2.2.8",
@@ -49,7 +63,8 @@
 			},
 			{
 				"name": "query",
-				"type": "string"
+				"type": "string",
+				"dsl": "cypher"
 			}
 		],
 		"since": "2.0.0",
@@ -64,7 +79,14 @@
 			},
 			{
 				"name": "query",
-				"type": "string"
+				"type": "string",
+				"dsl": "cypher"
+			},
+			{
+				"name": "timeout",
+				"type": "integer",
+				"optional": true,
+				"token":"TIMEOUT"
 			}
 		],
 		"since": "2.0.0",
@@ -109,8 +131,17 @@
 	},
 	"GRAPH.LIST": {
 		"summary": "Lists all graph keys in the keyspace",
-		"arguments": [],
 		"since": "2.4.3",
+		"group": "graph"
+	},
+	"GRAPH.CONSTRAINT DROP": {
+		"summary": "Deletes a constraint from specified graph",
+		"since": "2.12.0",
+		"group": "graph"
+	},
+	"GRAPH.CONSTRAINT CREATE": {
+		"summary": "Creates a constraint on specified graph",
+		"since": "2.12.0",
 		"group": "graph"
 	}
 }

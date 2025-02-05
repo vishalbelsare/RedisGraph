@@ -1,14 +1,17 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include <string.h>
 #include "RG.h"
-#include "../configuration/config.h"
+#include "configuration/config.h"
 
-void _Config_get_all(RedisModuleCtx *ctx) {
+void _Config_get_all
+(
+	RedisModuleCtx *ctx
+) {
 	uint config_count = Config_END_MARKER;
 	RedisModule_ReplyWithArray(ctx, config_count);
 
@@ -28,7 +31,12 @@ void _Config_get_all(RedisModuleCtx *ctx) {
 	}
 }
 
-void _Config_get(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+void _Config_get
+(
+	RedisModuleCtx *ctx,
+	RedisModuleString **argv,
+	int argc
+) {
 	// return the given config's value to the user
 	Config_Option_Field config_field;
 	const char *config_name = RedisModule_StringPtrLen(argv[2], NULL);
@@ -56,7 +64,12 @@ void _Config_get(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	}
 }
 
-void _Config_set(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+void _Config_set
+(
+	RedisModuleCtx *ctx,
+	RedisModuleString **argv,
+	int argc
+) {
 	//--------------------------------------------------------------------------
 	// validate configuration
 	//--------------------------------------------------------------------------
@@ -88,17 +101,23 @@ void _Config_set(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	
 		// field is not allowed to be reconfigured
 		if(!configurable_field) {
-			RedisModule_ReplyWithError(ctx, "Field can not be re-configured");
+			RedisModule_ReplyWithError(ctx, "This configuration parameter cannot be set at run-time");
 			return;
 		}
 
 		// make sure value is valid
+		char *error = NULL;
 		const char *val_str = RedisModule_StringPtrLen(val, NULL);
-		if(!Config_Option_dryrun(config_field, val_str)) {
-			char *errmsg;
-			asprintf(&errmsg, "Failed to set config value %s to %s", config_name, val_str);
-			RedisModule_ReplyWithError(ctx, errmsg);
-			free(errmsg);
+		if(!Config_Option_dryrun(config_field, val_str, &error)) {
+			if(error != NULL) {
+				RedisModule_ReplyWithError(ctx, error);
+			} else {
+				char *errmsg;
+				int rc __attribute__((unused));
+				rc = asprintf(&errmsg, "Failed to set config value %s to %s", config_name, val_str);
+				RedisModule_ReplyWithError(ctx, errmsg);
+				free(errmsg);
+			}
 			return;
 		}
 	}
@@ -119,28 +138,39 @@ void _Config_set(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 		// set configuration
 		const char *val_str = RedisModule_StringPtrLen(val, NULL);
-		res = Config_Option_set(config_field, val_str);
+		res = Config_Option_set(config_field, val_str, NULL);
 		ASSERT(res == true);
 	}
 
 	RedisModule_ReplyWithSimpleString(ctx, "OK");
 }
 
-int Graph_Config(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+int Graph_Config
+(
+	RedisModuleCtx *ctx,
+	RedisModuleString **argv,
+	int argc
+) {
 	// GRAPH.CONFIG <GET|SET> <NAME> [value]
-	if(argc < 3) return RedisModule_WrongArity(ctx);
+	if(argc < 3) {
+		return RedisModule_WrongArity(ctx);
+	}
 
 	const char *action = RedisModule_StringPtrLen(argv[1], NULL);
 
 	if(!strcasecmp(action, "GET")) {
 		// GRAPH.CONFIG GET <NAME>
-		if(argc != 3) return RedisModule_WrongArity(ctx);
+		if(argc != 3) {
+			return RedisModule_WrongArity(ctx);
+		}
 		_Config_get(ctx, argv, argc);
 	} else if(!strcasecmp(action, "SET")) {
 		// GRAPH.CONFIG SET <NAME> [value] <NAME> [value] ...
 		// emit an error if we received an odd number of arguments,
 		// as this indicates an invalid configuration
-		if(argc < 4 || (argc % 2) == 1) return RedisModule_WrongArity(ctx);
+		if(argc < 4 || (argc % 2) == 1) {
+			return RedisModule_WrongArity(ctx);
+		}
 		_Config_set(ctx, argv+2, argc-2);
 	} else {
 		RedisModule_ReplyWithError(ctx, "Unknown subcommand for GRAPH.CONFIG");

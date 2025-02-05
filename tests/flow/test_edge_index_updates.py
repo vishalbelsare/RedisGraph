@@ -1,13 +1,7 @@
-import os
-import sys
 import random
 import string
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from base import FlowTestsBase
+from common import *
+from index_utils import *
 
 GRAPH_ID = "G"
 redis_graph = None
@@ -18,12 +12,13 @@ groups = ["Group A", "Group B", "Group C","Group D", "Group E"]
 node_ctr = 0
 edge_ctr = 0
 
-class testEdgeIndexUpdatesFlow(FlowTestsBase):
+
+class testEdgeIndexUpdatesFlow():
     def __init__(self):
         self.env = Env(decodeResponses=True)
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph(GRAPH_ID, redis_con)
+        redis_graph = Graph(redis_con, GRAPH_ID)
         self.populate_graph()
         self.build_indices()
 
@@ -61,6 +56,7 @@ class testEdgeIndexUpdatesFlow(FlowTestsBase):
         for field in fields:
             redis_graph.query("CREATE INDEX FOR ()-[r:type_a]-() ON (r.%s)" % (field))
             redis_graph.query("CREATE INDEX FOR ()-[r:type_b]-() ON (r.%s)" % (field))
+        wait_for_indices_to_sync(redis_graph)
 
     # Validate that all properties are indexed
     def validate_indexed(self):
@@ -116,14 +112,14 @@ class testEdgeIndexUpdatesFlow(FlowTestsBase):
 
     # Modify a property, triggering updates to all edges in two indices
     def test01_full_property_update(self):
-        result = redis_graph.query("MATCH ()-[a]->() SET a.doubleval = a.doubleval + %f" % (round(random.uniform(-1, 1), 2)))
+        result = redis_graph.query("MATCH ()-[a]->() SET a.doubleval = a.doubleval + 1.1")
         self.env.assertEquals(result.properties_set, 1000)
         # Verify that index scans still function and return correctly
         self.validate_state()
 
     # Modify a property, triggering updates to a subset of edges in two indices
     def test02_partial_property_update(self):
-        redis_graph.query("MATCH ()-[a]->() WHERE a.doubleval > 0 SET a.doubleval = a.doubleval + %f" % (round(random.uniform(-1, 1), 2)))
+        redis_graph.query("MATCH ()-[a]->() WHERE a.doubleval > 0 SET a.doubleval = a.doubleval + 1.1")
         # Verify that index scans still function and return correctly
         self.validate_state()
 
@@ -185,12 +181,13 @@ class testEdgeIndexUpdatesFlow(FlowTestsBase):
         query = """CREATE ()-[:NEW {v: 5}]->()"""
         result = redis_graph.query(query)
         self.env.assertEquals(result.properties_set, 1)
-        redis_graph.query("CREATE INDEX FOR ()-[r:NEW]-() ON (r.v)")
+        create_edge_exact_match_index(redis_graph, 'NEW', 'v', sync=True)
 
         # Delete the entity's property
         query = """MATCH ()-[a:NEW {v: 5}]->() SET a.v = NULL"""
         result = redis_graph.query(query)
-        self.env.assertEquals(result.properties_set, 1)
+        self.env.assertEquals(result.properties_set, 0)
+        self.env.assertEquals(result.properties_removed, 1)
 
         # Query the index for the entity
         query = """MATCH ()-[a:NEW {v: 5}]->() RETURN a"""
@@ -200,3 +197,4 @@ class testEdgeIndexUpdatesFlow(FlowTestsBase):
         # No entities should be returned
         expected_result = []
         self.env.assertEquals(result.result_set, expected_result)
+

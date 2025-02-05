@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #pragma once
 
@@ -21,7 +21,7 @@ typedef struct {
 	RG_Matrix F;                // Filter matrix.
 	RG_Matrix M;                // Algebraic expression result.
 	EdgeTraverseCtx *edge_ctx;  // Edge collection data if the edge needs to be set.
-	GxB_MatrixTupleIter *iter;   // Iterator over M.
+	RG_MatrixTupleIter iter;    // Iterator over M.
 	int srcNodeIdx;             // Source node index into record.
 	int destNodeIdx;            // Destination node index into record.
 	uint record_count;          // Number of held records.

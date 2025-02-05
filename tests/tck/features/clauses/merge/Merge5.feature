@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021 "Neo Technology,"
+# Copyright (c) 2015-2022 "Neo Technology,"
 # Network Engine for Objects in Lund AB [http://neotechnology.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -389,7 +389,6 @@ Feature: Merge5 - Merge relationships
     And the side effects should be:
       | +relationships | 1 |
 
-  @skip
   Scenario: [20] Do not match on deleted entities
     Given an empty graph
     And having executed:
@@ -418,7 +417,6 @@ Feature: Merge5 - Merge relationships
       | +relationships | 2 |
       | -relationships | 4 |
       | +properties    | 1 |
-      | -properties    | 2 |
 
   @skip
   Scenario: [21] Do not match on deleted relationships
@@ -446,7 +444,6 @@ Feature: Merge5 - Merge relationships
       | +properties    | 1 |
       | -properties    | 2 |
 
-  @NegativeTest
   Scenario: [22] Fail when imposing new predicates on a variable that is already bound
     Given any graph
     When executing query:
@@ -456,7 +453,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: VariableAlreadyBound
 
-  @NegativeTest
   Scenario: [23] Fail when merging relationship without type
     Given any graph
     When executing query:
@@ -466,7 +462,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: NoSingleRelationshipType
 
-  @NegativeTest
   Scenario: [24] Fail when merging relationship without type, no colon
     Given any graph
     When executing query:
@@ -476,7 +471,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: NoSingleRelationshipType
 
-  @NegativeTest
   Scenario: [25] Fail when merging relationship with more than one type
     Given any graph
     When executing query:
@@ -486,7 +480,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: NoSingleRelationshipType
 
-  @NegativeTest
   Scenario: [26] Fail when merging relationship that is already bound
     Given any graph
     When executing query:
@@ -496,7 +489,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: VariableAlreadyBound
 
-  @NegativeTest
   Scenario: [27] Fail when using parameter as relationship predicate in MERGE
     Given any graph
     When executing query:
@@ -508,7 +500,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: InvalidParameterUse
 
-  @NegativeTest
   @skip
   Scenario: [28] Fail when using variable length relationship in MERGE
     Given any graph
@@ -520,7 +511,6 @@ Feature: Merge5 - Merge relationships
       """
     Then a SyntaxError should be raised at compile time: CreatingVarLength
 
-  @NegativeTest
   Scenario: [29] Fail on merging relationship with null property
     Given any graph
     When executing query:

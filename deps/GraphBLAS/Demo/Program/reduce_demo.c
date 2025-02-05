@@ -2,7 +2,7 @@
 // GraphBLAS/Demo/Program/reduce_demo: reduce a matrix to a scalar
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
@@ -13,7 +13,7 @@
 #endif
 
 // #define N 65536
-   #define N 16384
+   #define N 16382
 
 int main (void)
 {

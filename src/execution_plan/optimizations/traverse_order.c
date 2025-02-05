@@ -1,16 +1,16 @@
 /*
- * Copyright 2018-2022 Redis Labs Ltd. and Contributors
- *
- * This file is available under the Redis Labs Source Available License Agreement
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
  */
 
 #include "RG.h"
 #include "../../util/arr.h"
-#include "../../util/qsort.h"
-#include "../../util/strcmp.h"
 #include "../../util/rmalloc.h"
 #include "../../arithmetic/algebraic_expression/utils.h"
 #include "traverse_order_utils.h"
+
+#include <stdlib.h>
 
 // having chosen which algebraic expression will be evaluated first
 // determine whether it is worthwhile to transpose it
@@ -79,8 +79,8 @@ static void _resolve_winning_sequence
 		// see if source is already resolved
 		for(int j = i - 1; j >= 0; j--) {
 			AlgebraicExpression *prev_exp = exps[j];
-			if(!RG_STRCMP(AlgebraicExpression_Src(prev_exp), src) ||
-			   !RG_STRCMP(AlgebraicExpression_Dest(prev_exp), src)) {
+			if(!strcmp(AlgebraicExpression_Src(prev_exp), src) ||
+			   !strcmp(AlgebraicExpression_Dest(prev_exp), src)) {
 				src_resolved = true;
 				break;
 			}
@@ -128,10 +128,10 @@ static AlgebraicExpression **_valid_expressions
 			const char *used_src = AlgebraicExpression_Src(used);
 			const char *used_dest  = AlgebraicExpression_Dest(used);
 
-			if(RG_STRCMP(src, used_src)   == 0  ||
-			   RG_STRCMP(src, used_dest)  == 0  ||
-			   RG_STRCMP(dest, used_src)  == 0  ||
-			   RG_STRCMP(dest, used_dest) == 0) {
+			if(strcmp(src, used_src)   == 0  ||
+			   strcmp(src, used_dest)  == 0  ||
+			   strcmp(dest, used_src)  == 0  ||
+			   strcmp(dest, used_dest) == 0) {
 				valid = true;
 				break;
 			}
@@ -199,6 +199,14 @@ static void _order_expressions
 	ASSERT(res == true);
 }
 
+static int _score_cmp
+(
+	const ScoredExp *a,
+	const ScoredExp *b
+) {
+	return b->score - a->score;
+}
+
 // given a set of algebraic expressions representing a graph traversal
 // we pick the order in which the expressions will be evaluated
 // taking into account filters and transposes
@@ -236,10 +244,9 @@ void orderExpressions
 	TraverseOrder_ScoreExpressions(scored_exps, exps, _exp_count, bound_vars,
 								   filtered_entities, qg);
 
-	// Sort scored_exps on score in descending order.
-	// Compare macro used to sort scored expressions.
-#define score_cmp(a,b) ((*a).score > (*b).score)
-	QSORT(ScoredExp, scored_exps, _exp_count, score_cmp);
+	// sort scored_exps on score in descending order
+	qsort(scored_exps, _exp_count, sizeof(ScoredExp),
+			(int(*)(const void*, const void*))_score_cmp);
 
 	//--------------------------------------------------------------------------
 	// Find the highest-scoring valid arrangement

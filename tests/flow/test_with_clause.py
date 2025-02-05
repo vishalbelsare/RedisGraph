@@ -1,11 +1,9 @@
+from common import *
 import re
-import redis
-from RLTest import Env
-from redisgraph import Graph, Node, Edge
-from base import FlowTestsBase
 
 redis_graph = None
 values = ["str1", "str2", False, True, 5, 10.5]
+
 
 class testWithClause(FlowTestsBase):
     
@@ -13,7 +11,7 @@ class testWithClause(FlowTestsBase):
         self.env = Env(decodeResponses=True)
         global redis_graph
         redis_con = self.env.getConnection()
-        redis_graph = Graph("G", redis_con)
+        redis_graph = Graph(redis_con, "G")
         self.populate_graph()
  
     def populate_graph(self):
@@ -189,7 +187,7 @@ class testWithClause(FlowTestsBase):
         # otherwise, x is even and ceil(x/2) == floor(x/2).
         # ceil(5/2) = 3, floor(5/2) = 2
         # ceil(6/2) = 3, floor(6/2) = 3.
-        query = """unwind(range(0, 10)) as x with x as x where ceil(x/2) > floor(x/2) return count(x)"""
+        query = """unwind(range(0, 10)) as x with x as x where ceil(x/2.0) > floor(x/2.0) return count(x)"""
         actual_result = redis_graph.query(query)
         # Expecting count of 5: [1,3,5,7,9].
         self.env.assertEqual(actual_result.result_set[0], [5])
@@ -262,3 +260,10 @@ class testWithClause(FlowTestsBase):
             except redis.exceptions.ResponseError as e:
                 # Expecting an error.
                 self.env.assertIn("not defined", str(e))
+
+    def test12_cartesian_product_reset_single_response(self):
+        # Verify that WITH projections that with no children are reset
+        # properly by CartesianProduct ops
+        query = """WITH 1 AS x MATCH (a:label_a), (b:label_b) RETURN a.v, b.v"""
+        actual_result = redis_graph.query(query)
+        self.env.assertEqual(len(actual_result.result_set), 36)

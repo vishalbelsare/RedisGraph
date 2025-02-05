@@ -2,8 +2,8 @@
 // gb_interface.h: definitions the SuiteSparse:GraphBLAS interface
 //------------------------------------------------------------------------------
 
-// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2021, All Rights Reserved.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SuiteSparse:GraphBLAS, Timothy A. Davis, (c) 2017-2022, All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 //------------------------------------------------------------------------------
 
@@ -58,14 +58,21 @@ void gbcov_put (void) ;
 
 #define CHECK_ERROR(error,message) if (error) ERROR (message) ;
 
-#define OK(method) CHECK_ERROR ((method) != GrB_SUCCESS, "GrB:error") ;
+#define OK(method)                                          \
+{                                                           \
+    GrB_Info info = method ;                                \
+    if (info != GrB_SUCCESS)                                \
+    {                                                       \
+        ERROR (gb_error (info)) ;                           \
+    }                                                       \
+}
 
 #define OK0(method)                                         \
 {                                                           \
     GrB_Info info = method ;                                \
     if (!(info == GrB_SUCCESS || info == GrB_NO_VALUE))     \
     {                                                       \
-        ERROR ("GrB:error") ;                               \
+        ERROR (gb_error (info)) ;                           \
     }                                                       \
 }
 
@@ -73,7 +80,7 @@ void gbcov_put (void) ;
 {                                                           \
     if ((method) != GrB_SUCCESS)                            \
     {                                                       \
-        char *message ;                                     \
+        const char *message ;                               \
         GrB_Matrix_error (&message, C) ;                    \
         ERROR (message) ;                                   \
     }                                                       \
@@ -182,7 +189,7 @@ GrB_Matrix gb_get_deep      // return a deep GrB_Matrix copy of a built-in X
     const mxArray *X        // input built-in matrix (sparse or struct)
 ) ;
 
-GrB_Type gb_type_to_mxstring    // return the built-in string from a GrB_Type
+mxArray * gb_type_to_mxstring    // return the built-in string from a GrB_Type
 (
     const GrB_Type type
 ) ;
@@ -212,6 +219,11 @@ void gb_usage       // check usage and make sure GxB_init has been called
 (
     bool ok,                // if false, then usage is not correct
     const char *message     // error message if usage is not correct
+) ;
+
+const char *gb_error        // return an error string from a GrB_Info value
+(
+    GrB_Info info
 ) ;
 
 void gb_find_dot            // find 1st and 2nd dot ('.') in a string
@@ -374,6 +386,12 @@ bool gb_mxarray_is_scalar   // true if built-in array is a scalar
     const mxArray *S
 ) ;
 
+uint64_t gb_mxget_uint64_scalar // return uint64 value of a MATLAB scalar
+(
+    const mxArray *mxscalar,    // MATLAB scalar to extract
+    char *name                  // name of the scalar
+) ;
+
 bool gb_mxarray_is_empty    // true if built-in array is NULL, or 2D and 0-by-0
 (
     const mxArray *S
@@ -399,7 +417,8 @@ GrB_Index *gb_mxcell_to_index   // return index list I
     base_enum_t base,           // I is one-based or zero-based
     const GrB_Index n,          // dimension of matrix being indexed
     bool *I_allocated,          // true if output array I is allocated
-    GrB_Index *ni               // length (I)
+    GrB_Index *ni,              // length (I)
+    int64_t *I_max              // max (I) is computed if I_max is not NULL
 ) ;
 
 GrB_BinaryOp gb_first_binop         // return GrB_FIRST_[type] operator
@@ -513,11 +532,11 @@ void gb_get_mxargs
     const mxArray *pargin [ ],  // input arguments for mexFunction
     const char *usage,          // usage to print, if too many args appear
     // output:
-    const mxArray *Matrix [4],  // matrix arguments
+    mxArray *Matrix [4],        // matrix arguments
     int *nmatrices,             // # of matrix arguments
-    const mxArray *String [2],  // string arguments
+    mxArray *String [2],        // string arguments
     int *nstrings,              // # of string arguments
-    const mxArray *Cell [2],    // cell array arguments
+    mxArray *Cell [2],          // cell array arguments
     int *ncells,                // # of cell array arguments
     GrB_Descriptor *desc,       // last argument is always the descriptor
     base_enum_t *base,          // desc.base
@@ -544,7 +563,7 @@ bool gb_is_integer (const GrB_Type type) ;
 
 bool gb_is_float (const GrB_Type type) ;
 
-GrB_BinaryOp gb_round_binop (const GrB_Type type) ;
+GrB_UnaryOp gb_round_op (const GrB_Type type) ;
 
 mxArray *gb_mxclass_to_mxstring (mxClassID class, bool is_complex) ;
 

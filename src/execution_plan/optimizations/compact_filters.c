@@ -1,13 +1,13 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "../../RG.h"
-#include "../../errors.h"
 #include "../../query_ctx.h"
 #include "../ops/op_filter.h"
+#include "../../errors/errors.h"
 #include "../../filter_tree/filter_tree.h"
 #include "../execution_plan_build/execution_plan_modify.h"
 
@@ -37,7 +37,7 @@ static void _removeTrueFilter(ExecutionPlan *plan, OpBase *op) {
 		SIValue_Free(bool_val);
 		return;
 	}
-	if(SIValue_IsTrue(bool_val)) {
+	if(!SIValue_IsNull(bool_val) && SIValue_IsTrue(bool_val)) {
 		ExecutionPlan_RemoveOp(plan, op);
 		OpBase_Free(op);
 	}

@@ -1,8 +1,8 @@
 /*
-* Copyright 2018-2022 Redis Labs Ltd. and Contributors
-*
-* This file is available under the Redis Labs Source Available License Agreement
-*/
+ * Copyright Redis Ltd. 2018 - present
+ * Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ * the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "op_node_by_index_scan.h"
 #include "../../query_ctx.h"
@@ -18,10 +18,10 @@ static void IndexScanFree(OpBase *opBase);
 
 static void IndexScanToString(const OpBase *ctx, sds *buf) {
 	IndexScan *op = (IndexScan *)ctx;
-	ScanToString(ctx, buf, op->n.alias, op->n.label);
+	ScanToString(ctx, buf, op->n->alias, op->n->label);
 }
 
-OpBase *NewIndexScanOp(const ExecutionPlan *plan, Graph *g, NodeScanCtx n,
+OpBase *NewIndexScanOp(const ExecutionPlan *plan, Graph *g, NodeScanCtx *n,
 		RSIndex *idx, FT_FilterNode *filter) {
 	// validate inputs
 	ASSERT(g      != NULL);
@@ -43,7 +43,7 @@ OpBase *NewIndexScanOp(const ExecutionPlan *plan, Graph *g, NodeScanCtx n,
 	OpBase_Init((OpBase *)op, OPType_NODE_BY_INDEX_SCAN, "Node By Index Scan", IndexScanInit, IndexScanConsume,
 				IndexScanReset, IndexScanToString, NULL, IndexScanFree, false, plan);
 
-	op->nodeRecIdx = OpBase_Modifies((OpBase *)op, n.alias);
+	op->nodeRecIdx = OpBase_Modifies((OpBase *)op, n->alias);
 	return (OpBase *)op;
 }
 
@@ -63,11 +63,11 @@ static OpResult IndexScanInit(OpBase *opBase) {
 	}
 
 	// resolve label ID now if it is still unknown
-	if(op->n.label_id == GRAPH_UNKNOWN_LABEL) {
+	if(op->n->label_id == GRAPH_UNKNOWN_LABEL) {
 		GraphContext *gc = QueryCtx_GetGraphCtx();
-		Schema *schema = GraphContext_GetSchema(gc, op->n.label, SCHEMA_NODE);
+		Schema *schema = GraphContext_GetSchema(gc, op->n->label, SCHEMA_NODE);
 		ASSERT(schema != NULL);
-		op->n.label_id = schema->id;
+		op->n->label_id = schema->id;
 	}
 
 	return OP_OK;
@@ -216,15 +216,14 @@ static Record IndexScanConsume(OpBase *opBase) {
 static OpResult IndexScanReset(OpBase *opBase) {
 	IndexScan *op = (IndexScan *)opBase;
 
-	if(op->rebuild_index_query) {
+	if(op->iter) {
 		RediSearch_ResultsIteratorFree(op->iter);
 		op->iter = NULL;
-		if(op->unresolved_filters) {
-			FilterTree_Free(op->unresolved_filters);
-			op->unresolved_filters = NULL;
-		}
-	} else {
-		RediSearch_ResultsIteratorReset(op->iter);
+	}
+
+	if(op->unresolved_filters) {
+		FilterTree_Free(op->unresolved_filters);
+		op->unresolved_filters = NULL;
 	}
 
 	return OP_OK;
@@ -236,24 +235,29 @@ static void IndexScanFree(OpBase *opBase) {
 	 * read locked, if this index scan operation is part of
 	 * a query which will modified this index we'll be stuck in
 	 * a dead lock, as we're unable to acquire index write lock. */
-	if(op->iter) {
+	if(op->iter != NULL) {
 		RediSearch_ResultsIteratorFree(op->iter);
 		op->iter = NULL;
 	}
 
-	if(op->child_record) {
+	if(op->child_record != NULL) {
 		OpBase_DeleteRecord(op->child_record);
 		op->child_record = NULL;
 	}
 
-	if(op->filter) {
+	if(op->filter != NULL) {
 		FilterTree_Free(op->filter);
 		op->filter = NULL;
 	}
 
-	if(op->unresolved_filters) {
+	if(op->unresolved_filters != NULL) {
 		FilterTree_Free(op->unresolved_filters);
 		op->unresolved_filters = NULL;
+	}
+
+	if(op->n != NULL) {
+		NodeScanCtx_Free(op->n);
+		op->n = NULL;
 	}
 }
 

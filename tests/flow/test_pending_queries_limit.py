@@ -1,6 +1,4 @@
-import os
-from RLTest import Env
-from redisgraph import Graph
+from common import *
 from pathos.pools import ProcessPool as Pool
 
 # 1.test getting and setting config
@@ -12,6 +10,7 @@ from pathos.pools import ProcessPool as Pool
 GRAPH_NAME = "max_pending_queries"
 SLOW_QUERY = "UNWIND range (0, 1000000) AS x WITH x WHERE (x / 2) = 50 RETURN x"
 
+
 def issue_query(conn, q):
     try:
         conn.execute_command("GRAPH.QUERY", GRAPH_NAME, q)
@@ -22,9 +21,9 @@ def issue_query(conn, q):
 
 class testPendingQueryLimit():
     def __init__(self):
-        self.env = Env(decodeResponses=True)
+        self.env = Env(decodeResponses=True, moduleArgs="THREAD_COUNT 2")
         # skip test if we're running under Valgrind
-        if self.env.envRunner.debugger is not None or os.getenv('COV') == '1':
+        if VALGRIND:
             self.env.skip() # valgrind is not working correctly with multi process
 
         self.conn = self.env.getConnection()
@@ -42,6 +41,8 @@ class testPendingQueryLimit():
 
         # invoke queries
         result = pool.map(issue_query, connections, qs)
+       
+        pool.clear()
 
         # return if error encountered
         return any(result)
